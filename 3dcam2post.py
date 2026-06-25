@@ -73,6 +73,7 @@ TRANSLATIONS = {
         "lbl_digits_s": "Stellen Szene:", "lbl_digits_e": "Einstell.:", "lbl_digits_t": "Take:",
         "sec_verify": " File Verification & Reports ",
         "opt_verify": "Prüfung aktivieren (MHL & HTML Report erstellen)",
+        "opt_thumbs": "Vorschaubilder für HTML-Report generieren (dauert länger)",
         "desc_verify": "Erstellt MHL (Hash List) und HTML Report. Erhöht Datensicherheit und Kopierzeit.",
         "opt_md5": "MD5 (Standard)",
         "opt_xx": "xxHash (High Speed)",
@@ -125,6 +126,7 @@ TRANSLATIONS = {
         "lbl_digits_s": "Digits Scene:", "lbl_digits_e": "Shot:", "lbl_digits_t": "Take:",
         "sec_verify": " File Verification & Reports ",
         "opt_verify": "Enable Verification (Create MHL & HTML Reports)",
+        "opt_thumbs": "Generate thumbnails for HTML Report (takes extra time)",
         "desc_verify": "Creates MHL (Hash List) and HTML Report. Increases data safety and copy time.",
         "opt_md5": "MD5 (Standard)",
         "opt_xx": "xxHash (High Speed)",
@@ -155,11 +157,16 @@ class IngestProApp:
 
         ffmpeg_bin = "ffmpeg.exe" if self.is_windows else "ffmpeg"
         self.ffmpeg_path = resource_path(ffmpeg_bin)
+        if not os.path.exists(self.ffmpeg_path):
+            sys_ffmpeg = shutil.which(ffmpeg_bin)
+            if sys_ffmpeg:
+                self.ffmpeg_path = sys_ffmpeg
 
         self.defaults = {
             "language": "de", 
             "use_cam_id": False,
             "verify_copy": False,  
+            "generate_thumbs": True,
             "hash_algo": "md5",
             "padding_s": 2, "padding_e": 2, "padding_t": 3,
             "sort_mode": "Drehtage",
@@ -517,6 +524,10 @@ class IngestProApp:
         verify_sect.pack(fill="x", padx=15, pady=5)
         verify_var = tk.BooleanVar(value=self.defaults["verify_copy"])
         tk.Checkbutton(verify_sect, text=self.tr("opt_verify"), variable=verify_var, font=("Arial", 10, "bold")).pack(anchor="w")
+        
+        thumb_var = tk.BooleanVar(value=self.defaults.get("generate_thumbs", True))
+        tk.Checkbutton(verify_sect, text=self.tr("opt_thumbs"), variable=thumb_var).pack(anchor="w", padx=20)
+        
         tk.Label(verify_sect, text=self.tr("desc_verify"), font=("Arial", 8), fg="#666", justify=tk.LEFT).pack(anchor="w", padx=20, pady=(0, 5))
         
         algo_var = tk.StringVar(value=self.defaults.get("hash_algo", "md5"))
@@ -545,6 +556,7 @@ class IngestProApp:
                 "language": lang_var.get(),
                 "use_cam_id": cam_var.get(),
                 "verify_copy": verify_var.get(),
+                "generate_thumbs": thumb_var.get(),
                 "hash_algo": algo_var.get(),
                 "audio_source": audio_var.get(),
                 "strip_audio_eye": strip_audio_var.get(),
@@ -913,13 +925,14 @@ class IngestProApp:
                         meta_data = self.extract_ffmpeg_metadata(src_path)
                     
                     # Report Thumbnails generieren (nur 1x pro Clip-ID)
-                    self.create_report_thumbnails(
-                        src_path, 
-                        cid, 
-                        meta_data.get('duration_sec'), 
-                        meta_data.get('fps'),
-                        meta_data.get('start_sec', 0)
-                    )
+                    if self.defaults.get("verify_copy", False) and self.defaults.get("generate_thumbs", True):
+                        self.create_report_thumbnails(
+                            target_video, 
+                            cid, 
+                            meta_data.get('duration_sec'), 
+                            meta_data.get('fps'),
+                            meta_data.get('start_sec', 0)
+                        )
 
                     # Log Video
                     if v_hash:
@@ -980,17 +993,17 @@ class IngestProApp:
             algo = self.defaults.get("hash_algo", "md5")
             src_hash = None
             if self.defaults["verify_copy"]:
-                self.status_msg.set(f"Prüfe Quelle ({algo.upper()}): {src.name}...")
+                self.root.after(0, lambda: self.status_msg.set(f"Prüfe Quelle ({algo.upper()}): {src.name}..."))
                 src_hash = self.generate_checksum(src, algo)
 
-            self.status_msg.set(f"Kopiere: {src.name}...")
+            self.root.after(0, lambda: self.status_msg.set(f"Kopiere: {src.name}..."))
             shutil.copy2(src, dst)
             
             if src.stat().st_size != dst.stat().st_size:
                 raise IOError(f"Größenfehler: {src.name}")
 
             if self.defaults["verify_copy"] and src_hash:
-                self.status_msg.set(f"Verifiziere Ziel ({algo.upper()}): {dst.name}...")
+                self.root.after(0, lambda: self.status_msg.set(f"Verifiziere Ziel ({algo.upper()}): {dst.name}..."))
                 dst_hash = self.generate_checksum(dst, algo)
                 if src_hash != dst_hash:
                     raise IOError(f"CHECKSUM ERROR bei {dst.name}")
@@ -999,7 +1012,7 @@ class IngestProApp:
 
         except Exception as e:
             print(f"Copy Error {src}: {e}")
-            self.status_msg.set(f"Fehler: {e}")
+            self.root.after(0, lambda e=e: self.status_msg.set(f"Fehler: {e}"))
             return None
 
     def extract_ffmpeg_metadata(self, file_path):
