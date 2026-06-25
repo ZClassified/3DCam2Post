@@ -975,6 +975,9 @@ class IngestProApp:
         if self.defaults["verify_copy"]:
             self.generate_reports(processed_files_log, report_dir)
 
+        # Generiere automatisch die Resolve CSV (immer, unabhängig von verify_copy)
+        self.generate_resolve_csv(processed_files_log, Path(self.target.get()))
+
         cleaned = self.cleanup_manifest_if_done()
         self.root.after(0, self.sync_clips_with_manifest)
 
@@ -1014,6 +1017,35 @@ class IngestProApp:
             print(f"Copy Error {src}: {e}")
             self.root.after(0, lambda e=e: self.status_msg.set(f"Fehler: {e}"))
             return None
+
+    def generate_resolve_csv(self, log_data, dest_folder):
+        """Erstellt eine Resolve-kompatible CSV-Datei mit Timecodes für alle importierten Clips"""
+        try:
+            csv_path = dest_folder / "Resolve_Timecode_Import.csv"
+            
+            # Sammle alle validen Timecodes
+            # Nutze ein dict um Duplikate zu vermeiden, falls ein File mehrfach auftaucht
+            tc_map = {}
+            for item in log_data:
+                # final_name z.B. "Project_S01_E01_T01_L.mxf"
+                file_name = item.get('file')
+                start_tc = item.get('start_tc')
+                if file_name and start_tc and start_tc != "00:00:00:00" and start_tc != "":
+                    tc_map[file_name] = start_tc
+            
+            if not tc_map:
+                return # Keine validen P2/TC Metadaten gefunden, keine CSV nötig
+
+            import csv
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['File Name', 'Start TC'])
+                for fname, tc in tc_map.items():
+                    writer.writerow([fname, tc])
+            
+            print(f"Resolve CSV erfolgreich generiert: {csv_path}")
+        except Exception as e:
+            print(f"Fehler bei der Resolve CSV Generierung: {e}")
 
     def extract_ffmpeg_metadata(self, file_path):
         meta = {'codec': '-', 'fps': '25', 'dur': '-', 'res': '-', 'bitrate': '', 
