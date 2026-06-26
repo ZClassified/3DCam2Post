@@ -1,0 +1,16 @@
+{
+    "language": "de",
+    "use_cam_id": false,
+    "verify_copy": false,
+    "generate_thumbs": true,
+    "hash_algo": "md5",
+    "padding_s": 2,
+    "padding_e": 2,
+    "padding_t": 3,
+    "sort_mode": "Drehtage",
+    "stammordner": "",
+    "audio_source": "Links",
+    "strip_audio_eye": false,
+    "copy_video": true,
+    "copy_audio": true
+}
