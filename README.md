@@ -7,7 +7,7 @@
 <a id="english"></a>
 ## 🇬🇧 English
 
-**A DIT ingest tool for (almost extinct) Stereo 3D camera material.**
+**A DIT ingest tool for (almost extinct) Stereo 3D cameras.**
 
 I originally built this tool for my own workflow. I am fully aware that probably no one seriously shoots in Stereo 3D anymore today. But since there might still be someone out there experimenting with old 3D cameras or trying to rescue old archive data, I am publishing this project.
 
@@ -50,7 +50,7 @@ You can simply download the pre-compiled standalone `.exe` from the **Releases**
 <a id="deutsch"></a>
 ## 🇩🇪 Deutsch
 
-**Ein DIT Ingest-Tool für (fast ausgestorbenes) Stereo 3D Kameramaterial.**
+**Ein DIT Ingest-Tool für (fast ausgestorbenes) Stereo 3D Kameras.**
 
 Ich habe dieses Tool ursprünglich für meinen eigenen Workflow gebaut. Mir ist völlig bewusst, dass heutzutage vermutlich niemand mehr ernsthaft in Stereo 3D dreht. Aber da es da draußen vielleicht doch noch den einen oder anderen gibt, der mit alten 3D Kameras experimentiert oder alte Archivdaten retten muss, veröffentliche ich das Projekt.
 
