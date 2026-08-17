@@ -246,7 +246,11 @@ class IngestProApp:
         self.tf_project = ft.TextField(label=self.tr("lbl_project"), value=self.project_name, width=200, on_change=self.on_project_change)
         self.tf_day = ft.TextField(label=self.tr("lbl_day"), value=self.day, width=80, on_change=self.on_day_change)
 
+        self.logo = ft.Image(src="design/3DCam2Post Icon V1.svg", width=50, height=50, fit=ft.BoxFit.CONTAIN)
+
         header = ft.Row([
+            self.logo,
+            ft.Container(width=10),
             ft.ElevatedButton(self.tr("btn_add_source"), icon=ft.Icons.FOLDER_OPEN, on_click=self.pick_source, bgcolor=ft.Colors.BLUE_700, color=ft.Colors.WHITE),
             ft.TextButton(self.tr("btn_clear_list"), icon=ft.Icons.CLEAR_ALL, on_click=self.clear_list, icon_color=ft.Colors.RED_400),
             ft.Container(width=20),
