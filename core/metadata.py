@@ -64,8 +64,20 @@ class MetadataExtractor:
         meta = {'codec': '-', 'fps': '-', 'dur': '-', 'res': '-', 'bitrate': '', 
                 'start_tc': '-', 'duration_sec': 0}
         try:
-            src_xml = vid_path.parent.parent / "CLIP" / f"{vid_path.stem}.XML"
-            if not src_xml.exists(): return meta
+            vid_path = Path(vid_path)
+            clip_dir = vid_path.parent.parent / "CLIP"
+            if not clip_dir.exists():
+                return meta
+
+            src_xml = None
+            target_xml_name = f"{vid_path.stem}.xml".upper()
+            for f in clip_dir.iterdir():
+                if f.name.upper() == target_xml_name:
+                    src_xml = f
+                    break
+
+            if not src_xml or not src_xml.exists():
+                return meta
             
             tree = ET.parse(src_xml)
             root = tree.getroot()

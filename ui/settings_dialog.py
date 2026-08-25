@@ -1,13 +1,14 @@
 import flet as ft
 
 class SettingsDialog:
-    def __init__(self, page: ft.Page, defaults, has_xxhash, tr, on_save, on_open_manual):
+    def __init__(self, page: ft.Page, defaults, has_xxhash, tr, on_save, on_open_manual, app_version="1.1.0"):
         self.page = page
         self.defaults = defaults
         self.has_xxhash = has_xxhash
         self.tr = tr
         self.on_save_cb = on_save
         self.on_open_manual = on_open_manual
+        self.app_version = app_version
 
         # State Variables
         self.lang_var = self.defaults.get("language", "de")
@@ -23,7 +24,11 @@ class SettingsDialog:
         self.strip_audio_var = self.defaults.get("strip_audio_eye", False)
 
         self.dialog = ft.AlertDialog(
-            title=ft.Text(self.tr("win_settings"), weight=ft.FontWeight.BOLD),
+            title=ft.Row([
+                ft.Text(self.tr("win_settings"), weight=ft.FontWeight.BOLD),
+                ft.Container(expand=True),
+                ft.Text(f"v{self.app_version}", size=12, color=ft.Colors.GREY_500)
+            ]),
             content=self.build_content(),
             actions=[
                 ft.ElevatedButton(self.tr("btn_manual"), on_click=lambda e: self.on_open_manual(), bgcolor=ft.Colors.CYAN_700, color=ft.Colors.WHITE),
@@ -75,11 +80,11 @@ class SettingsDialog:
                     ),
                     ft.Row([
                         ft.Text(self.tr("lbl_digits_s")),
-                        ft.Dropdown(value=self.pad_s, width=80, options=[ft.dropdown.Option(str(i)) for i in range(1, 4)], on_select=self._set_pad_s),
+                        ft.Dropdown(value=self.pad_s, width=80, options=[ft.dropdown.Option(key=str(i), text=str(i)) for i in range(1, 4)], on_select=self._set_pad_s),
                         ft.Text(self.tr("lbl_digits_e")),
-                        ft.Dropdown(value=self.pad_e, width=80, options=[ft.dropdown.Option(str(i)) for i in range(1, 4)], on_select=self._set_pad_e),
+                        ft.Dropdown(value=self.pad_e, width=80, options=[ft.dropdown.Option(key=str(i), text=str(i)) for i in range(1, 4)], on_select=self._set_pad_e),
                         ft.Text(self.tr("lbl_digits_t")),
-                        ft.Dropdown(value=self.pad_t, width=80, options=[ft.dropdown.Option(str(i)) for i in range(2, 6)], on_select=self._set_pad_t),
+                        ft.Dropdown(value=self.pad_t, width=80, options=[ft.dropdown.Option(key=str(i), text=str(i)) for i in range(2, 6)], on_select=self._set_pad_t),
                     ], alignment=ft.MainAxisAlignment.START),
                     ft.Divider(),
 

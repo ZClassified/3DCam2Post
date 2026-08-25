@@ -36,12 +36,12 @@ Since Resolve often ignores the native timecode of these old cameras, the genera
 
 ### Installation & Usage
 
-The tool is written in Python and uses `customtkinter` for a dark, clean interface. 
+The tool is written in Python and uses `flet` for a modern, responsive interface. 
 
 You can simply download the pre-compiled standalone `.exe` from the **Releases** page and run it directly. Alternatively, you can run it via Python:
 
 1. Clone the repository.
-2. Install dependencies: `pip install customtkinter Pillow` (optionally also `xxhash` for faster hashing).
+2. Install dependencies: `pip install -r requirements.txt` (or `pip install flet Pillow xxhash`).
 3. Ensure that `ffmpeg` is installed on your system or available in the system path (required for thumbnails and metadata extraction).
 4. Start the app via `python main.py`.
 
@@ -79,11 +79,11 @@ Da Resolve den nativen Timecode der alten Kameras oft ignoriert, hilft die gener
 
 ### Installation & Nutzung
 
-Das Tool ist in Python geschrieben und nutzt `customtkinter` für eine dunkle, aufgeräumte Oberfläche. 
+Das Tool ist in Python geschrieben und nutzt `flet` für eine moderne, responsive Benutzeroberfläche. 
 
 Du kannst dir einfach die fertig kompilierte Standalone-Version (`.exe`) unter **Releases** herunterladen und direkt starten. Alternativ kannst du das Tool über Python ausführen:
 
 1. Repository klonen.
-2. Abhängigkeiten installieren: `pip install customtkinter Pillow` (optional auch `xxhash` für schnelleres Hashing).
+2. Abhängigkeiten installieren: `pip install -r requirements.txt` (oder `pip install flet Pillow xxhash`).
 3. Sicherstellen, dass `ffmpeg` auf dem System installiert bzw. im Systempfad verfügbar ist (wird für Thumbnails und Metadaten-Extraktion benötigt).
 4. Die App über `python main.py` starten.

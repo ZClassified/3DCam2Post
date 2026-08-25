@@ -1,8 +1,8 @@
 import flet as ft
-from ui.main_window import IngestProApp
+from ui.main_window import IngestProApp, APP_VERSION
 
 def main(page: ft.Page):
-    page.title = "3DCam2Post Bridge"
+    page.title = f"3DCam2Post Bridge v{APP_VERSION}"
     # Flet automatically looks in the 'assets' folder
     page.window.icon = "icon.ico"
     page.icon = "icon.ico"

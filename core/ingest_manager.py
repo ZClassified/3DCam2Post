@@ -296,15 +296,23 @@ class IngestManager:
                                 'size': xml_target.stat().st_size, 'type': 'xml'
                             })
 
-                    if is_p2 and self.settings.get("copy_audio", True): 
-                        audio_files = self.copy_audio_p2(src_path, bn, eye, dest_folder/"AUDIO")
-                        for af in audio_files:
-                             if v_hash:
-                                ah = self.reporting.generate_checksum(af, self.settings.get('hash_algo', 'md5'))
-                                processed_files_log.append({
-                                    'path': str(af), 'hash': ah, 'algo': self.settings.get('hash_algo', 'md5'),
-                                    'size': af.stat().st_size, 'type': 'audio'
-                                })
+                    if is_p2 and self.settings.get("copy_audio", True):
+                        audio_src = self.settings.get("audio_source", "Links")
+                        should_copy_audio = True
+                        if audio_src in ["Links", "Left"] and eye != "L":
+                            should_copy_audio = False
+                        elif audio_src in ["Rechts", "Right"] and eye != "R":
+                            should_copy_audio = False
+
+                        if should_copy_audio:
+                            audio_files = self.copy_audio_p2(src_path, bn, eye, dest_folder/"AUDIO")
+                            for af in audio_files:
+                                if v_hash:
+                                    ah = self.reporting.generate_checksum(af, self.settings.get('hash_algo', 'md5'))
+                                    processed_files_log.append({
+                                        'path': str(af), 'hash': ah, 'algo': self.settings.get('hash_algo', 'md5'),
+                                        'size': af.stat().st_size, 'type': 'audio'
+                                    })
                     
                     manifest_data[cid][f"status_{eye}"] = "done"
 

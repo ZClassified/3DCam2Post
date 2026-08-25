@@ -105,6 +105,7 @@ class ReportGenerator:
                     grouped[cid]['name'] = item['name'].replace(f"_{eye}", "")
         
         rows = ""
+        main = None
         for cid, data in grouped.items():
             l_item = data.get('L')
             r_item = data.get('R')
