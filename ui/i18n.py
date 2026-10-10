@@ -240,7 +240,7 @@ TRANSLATIONS = {
 
 def make_tr(lang_getter):
     def tr(key, **kwargs):
-        lang = lang_getter() or "de"
+        lang = lang_getter() or "en"
         text = TRANSLATIONS.get(lang, TRANSLATIONS["de"]).get(key) or TRANSLATIONS["de"].get(key, key)
         return text.format(**kwargs) if kwargs else text
     return tr

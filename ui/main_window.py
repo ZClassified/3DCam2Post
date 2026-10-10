@@ -20,7 +20,7 @@ from ui.i18n import make_tr
 from ui.settings_dialog import SettingsDialog
 from ui.about import ffmpeg_version
 
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 MANIFEST_FILE = "ingest_manifest.json"
 
 ROW_H = 44
@@ -32,12 +32,12 @@ LOW_SPACE = 100 * 1024 ** 3
 BLANK_PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
 
 DEFAULTS = {
-    "language": "de", "use_cam_id": False, "verify_copy": False,
+    "language": "en", "use_cam_id": False, "verify_copy": False,
     "generate_thumbs": True, "hash_algo": "md5",
     "padding_s": 2, "padding_e": 2, "padding_t": 3,
     "sort_mode": "Drehtage", "stammordner": "",
     "audio_source": "Links", "strip_audio_eye": False, "copy_audio": True,
-    "last_project": "Projekt_Name", "last_day": "1",
+    "last_project": "Project_Name", "last_day": "1",
     "output_mode": "p2",
 }
 
@@ -99,7 +99,7 @@ class IngestProApp:
         self._list_px = 0.0
         self._list_h = 600.0
 
-        self.project_name = self.settings.get("last_project") or "Projekt_Name"
+        self.project_name = self.settings.get("last_project") or "Project_Name"
         self.day = str(self.settings.get("last_day") or "1")
         self.scene, self.setting, self.take, self.cam_id = "1", "1", "1", "A"
 

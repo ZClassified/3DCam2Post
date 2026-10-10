@@ -81,7 +81,7 @@ class SettingsDialog:
         self.audio_opts.disabled = not self.s.get("copy_audio", True)
 
     def _update_example(self):
-        name = build_name(self.s, self.s.get("last_project") or "Projekt", 1, 2, 3, "A")
+        name = build_name(self.s, self.s.get("last_project") or "Project", 1, 2, 3, "A")
         self.lbl_example.value = self.tr("naming_example", name=f"{name}_L.MXF")
 
     @staticmethod
@@ -99,7 +99,7 @@ class SettingsDialog:
             self._section(tr("sec_lang")),
             ft.RadioGroup(content=ft.Row([ft.Radio(value="de", label="Deutsch"),
                                           ft.Radio(value="en", label="English")]),
-                          value=self.s.get("language", "de"), on_change=self._setter("language")),
+                          value=self.s.get("language", "en"), on_change=self._setter("language")),
             ft.Divider(),
 
             self._section(tr("sec_naming")),

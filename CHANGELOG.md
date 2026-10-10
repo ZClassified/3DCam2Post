@@ -6,6 +6,13 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [1.3.2] - 2026-10-10
+
+### Geändert
+- Beim ersten Start (ohne vorhandene Einstellungen) ist die Oberfläche auf Englisch. Bestehende Einstellungen bleiben erhalten.
+
+---
+
 ## [1.3.1] - 2026-10-10
 
 ### Geändert
