@@ -6,6 +6,17 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [1.3.1] - 2026-10-10
+
+### Geändert
+- Einstellungen zweispaltig: alle Optionen sind ohne Scrollen sichtbar.
+- Hauptfenster passt jetzt vollständig in die Mindestgröße (1200×860): Start-Button war abgeschnitten,
+  die Spalte „Zielname“ wurde zusammengedrückt. Rechte Spalte kompakter (Hotkeys in einer Zeile,
+  Fortschrittszeile nur während des Ingests), Kamera-Spalte entfernt (Kameratyp steht als Tooltip an
+  der ID und in der Vorschauzeile).
+
+---
+
 ## [1.3.0] - 2026-10-10
 
 ### Behoben (Datensicherheit)

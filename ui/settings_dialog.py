@@ -95,50 +95,56 @@ class SettingsDialog:
 
     def build_content(self):
         tr = self.tr
+        left = ft.Column(spacing=10, expand=True, controls=[
+            self._section(tr("sec_lang")),
+            ft.RadioGroup(content=ft.Row([ft.Radio(value="de", label="Deutsch"),
+                                          ft.Radio(value="en", label="English")]),
+                          value=self.s.get("language", "de"), on_change=self._setter("language")),
+            ft.Divider(),
+
+            self._section(tr("sec_naming")),
+            ft.Switch(label=tr("opt_cam_id"), value=self.s.get("use_cam_id", False),
+                      on_change=self._setter("use_cam_id")),
+            ft.Row([
+                ft.Text(tr("lbl_digits_s")), self._pad_dropdown("padding_s", range(1, 5)),
+                ft.Text(tr("lbl_digits_e")), self._pad_dropdown("padding_e", range(1, 5)),
+                ft.Text(tr("lbl_digits_t")), self._pad_dropdown("padding_t", range(1, 6)),
+            ], spacing=10),
+            self.lbl_example,
+            ft.RadioGroup(content=ft.Column([
+                ft.Radio(value="Drehtage", label=tr("opt_sort_day")),
+                ft.Radio(value="Szenen", label=tr("opt_sort_scene")),
+            ], spacing=0), value=self.s.get("sort_mode", "Drehtage"), on_change=self._setter("sort_mode")),
+            ft.Divider(),
+
+            self._section(tr("sec_output")),
+            ft.RadioGroup(content=ft.Column([
+                ft.Radio(value="p2", label=tr("opt_out_p2")),
+                ft.Radio(value="p2_mov", label=tr("opt_out_p2_mov")),
+                ft.Radio(value="mov", label=tr("opt_out_mov")),
+            ], spacing=0), value=self.s.get("output_mode", "p2"), on_change=self._setter("output_mode")),
+            ft.Text(tr("desc_output"), size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+        ])
+        right = ft.Column(spacing=10, expand=True, controls=[
+            self._section(tr("sec_verify")),
+            ft.Switch(label=tr("opt_verify"), value=self.s.get("verify_copy", False),
+                      on_change=self._setter("verify_copy", after=self._on_verify)),
+            self.sw_thumbs,
+            self.rg_algo,
+            ft.Divider(),
+
+            self._section(tr("sec_audio")),
+            ft.Switch(label=tr("opt_copy_audio"), value=self.s.get("copy_audio", True),
+                      on_change=self._setter("copy_audio", after=self._on_copy_audio)),
+            self.audio_opts,
+        ])
+        # Two columns so everything is visible without scrolling; scrolling stays as a fallback
+        # for very small windows.
         return ft.Container(
-            width=560, height=620,
-            content=ft.Column(scroll=ft.ScrollMode.AUTO, spacing=12, controls=[
-                self._section(tr("sec_lang")),
-                ft.RadioGroup(content=ft.Row([ft.Radio(value="de", label="Deutsch"),
-                                              ft.Radio(value="en", label="English")]),
-                              value=self.s.get("language", "de"), on_change=self._setter("language")),
-                ft.Divider(),
-
-                self._section(tr("sec_naming")),
-                ft.Switch(label=tr("opt_cam_id"), value=self.s.get("use_cam_id", False),
-                          on_change=self._setter("use_cam_id")),
-                ft.Row([
-                    ft.Text(tr("lbl_digits_s")), self._pad_dropdown("padding_s", range(1, 5)),
-                    ft.Text(tr("lbl_digits_e")), self._pad_dropdown("padding_e", range(1, 5)),
-                    ft.Text(tr("lbl_digits_t")), self._pad_dropdown("padding_t", range(1, 6)),
-                ], spacing=10),
-                self.lbl_example,
-                ft.RadioGroup(content=ft.Column([
-                    ft.Radio(value="Drehtage", label=tr("opt_sort_day")),
-                    ft.Radio(value="Szenen", label=tr("opt_sort_scene")),
-                ], spacing=0), value=self.s.get("sort_mode", "Drehtage"), on_change=self._setter("sort_mode")),
-                ft.Divider(),
-
-                self._section(tr("sec_output")),
-                ft.RadioGroup(content=ft.Column([
-                    ft.Radio(value="p2", label=tr("opt_out_p2")),
-                    ft.Radio(value="p2_mov", label=tr("opt_out_p2_mov")),
-                    ft.Radio(value="mov", label=tr("opt_out_mov")),
-                ], spacing=0), value=self.s.get("output_mode", "p2"), on_change=self._setter("output_mode")),
-                ft.Text(tr("desc_output"), size=12, color=ft.Colors.ON_SURFACE_VARIANT),
-                ft.Divider(),
-
-                self._section(tr("sec_verify")),
-                ft.Switch(label=tr("opt_verify"), value=self.s.get("verify_copy", False),
-                          on_change=self._setter("verify_copy", after=self._on_verify)),
-                self.sw_thumbs,
-                self.rg_algo,
-                ft.Divider(),
-
-                self._section(tr("sec_audio")),
-                ft.Switch(label=tr("opt_copy_audio"), value=self.s.get("copy_audio", True),
-                          on_change=self._setter("copy_audio", after=self._on_copy_audio)),
-                self.audio_opts,
+            width=1060,
+            content=ft.Column(tight=True, scroll=ft.ScrollMode.AUTO, controls=[
+                ft.Row([left, ft.VerticalDivider(width=32), right],
+                       vertical_alignment=ft.CrossAxisAlignment.START, intrinsic_height=True),
             ]),
         )
 

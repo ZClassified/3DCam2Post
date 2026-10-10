@@ -20,12 +20,12 @@ from ui.i18n import make_tr
 from ui.settings_dialog import SettingsDialog
 from ui.about import ffmpeg_version
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 MANIFEST_FILE = "ingest_manifest.json"
 
 ROW_H = 44
-RIGHT_W = 580
-PREVIEW_W, PREVIEW_H = 282, 159
+RIGHT_W = 520
+PREVIEW_W, PREVIEW_H = 252, 142
 MONO = "Consolas"
 INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 LOW_SPACE = 100 * 1024 ** 3
@@ -291,10 +291,11 @@ class IngestProApp:
             border=ft.Border.all(1, ft.Colors.OUTLINE), border_radius=4,
         )
 
-    def _hk_button(self, key, label, handler):
+    def _hk_button(self, key, label, handler, tooltip=None):
         return ft.OutlinedButton(
-            content=ft.Row([self._keycap(key), ft.Text(label, size=13)], spacing=8, tight=True),
-            on_click=lambda e: self._run_hotkey(handler), expand=True,
+            content=ft.Row([self._keycap(key), ft.Text(label, size=13, no_wrap=True)], spacing=6, tight=True),
+            on_click=lambda e: self._run_hotkey(handler), expand=True, tooltip=tooltip,
+            style=ft.ButtonStyle(padding=ft.Padding.symmetric(horizontal=8)),
         )
 
     def _card(self, content, padding=16, expand=None):
@@ -345,7 +346,7 @@ class IngestProApp:
                                 width=width, expand=expand)
         table_header = ft.Container(
             content=ft.Row([
-                ft.Container(width=40), hcell(tr("col_id"), 120), hcell(tr("col_cam"), 56),
+                ft.Container(width=40), hcell(tr("col_id"), 110),
                 hcell(tr("col_eyes"), 64), hcell(tr("col_target"), expand=True),
                 hcell(tr("col_size"), 76, align=ft.TextAlign.RIGHT), hcell(tr("col_stat"), 150),
             ], spacing=8),
@@ -422,11 +423,11 @@ class IngestProApp:
                 self._hk_button("S", tr("hk_scene"), self.hk_new_scene),
                 self._hk_button("E", tr("hk_setting"), self.hk_new_setting),
                 self._hk_button("T", tr("hk_take_plus"), self.hk_plus_take),
-            ], spacing=8),
-            ft.Row([self._hk_button("Entf" if self.settings["language"] == "de" else "Del",
-                                    tr("hk_remove"), self.hk_toggle_transfer)], spacing=8),
+                self._hk_button("Entf" if self.settings["language"] == "de" else "Del",
+                                tr("hk_remove_short"), self.hk_toggle_transfer, tooltip=tr("hk_remove")),
+            ], spacing=6),
             ft.Text(tr("hk_hint"), size=11, color=ft.Colors.ON_SURFACE_VARIANT),
-        ], spacing=12))
+        ], spacing=10))
 
         # ---------- ingest
         self.lbl_free = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
@@ -443,10 +444,14 @@ class IngestProApp:
                                          bgcolor=ft.Colors.BLUE_700, color=ft.Colors.WHITE, height=46, expand=True)
         self.btn_cancel = ft.OutlinedButton(tr("btn_cancel"), icon=ft.Icons.STOP, on_click=self.cancel_ingest,
                                             disabled=True, height=46)
+        self.row_progress = ft.Row([self.lbl_current, self.lbl_mbps], visible=False)
         ingest_card = self._card(ft.Column([
-            ft.Row([ft.Text(tr("grp_ingest"), weight=ft.FontWeight.BOLD), ft.Container(expand=True), self.lbl_free]),
-            self.lbl_summary, self.lbl_output, self.lbl_ingest_warn, self.pb_ingest,
-            ft.Row([self.lbl_current, self.lbl_mbps]),
+            ft.Row([
+                self.lbl_summary, ft.Container(expand=True),
+                ft.Column([self.lbl_free, self.lbl_output], spacing=0,
+                          horizontal_alignment=ft.CrossAxisAlignment.END),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            self.lbl_ingest_warn, self.pb_ingest, self.row_progress,
             ft.Row([self.btn_start, self.btn_cancel]),
         ], spacing=8))
 
@@ -500,8 +505,8 @@ class IngestProApp:
         return ft.Container(
             content=ft.Row([
                 ft.Container(ft.Checkbox(value=c['transfer'], data=i, on_change=self.on_row_check), width=40),
-                ft.Text(c['mkey'], width=120, weight=ft.FontWeight.BOLD, font_family=MONO, size=13),
-                ft.Text(c['cam'], width=56, size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Text(c['mkey'], width=110, weight=ft.FontWeight.BOLD, font_family=MONO, size=13,
+                        tooltip=f"{c['cam']} · {c['id']}"),
                 ft.Row([badge("L"), badge("R")], width=64, spacing=4),
                 ft.Text(name or "–", expand=True, font_family=MONO, size=13,
                         color=ft.Colors.ON_SURFACE if name else ft.Colors.ON_SURFACE_VARIANT,
@@ -591,6 +596,7 @@ class IngestProApp:
         self.btn_start.disabled = busy
         self.btn_cancel.disabled = not busy
         self.pb_ingest.visible = busy
+        self.row_progress.visible = busy
         if busy:
             self.pb_ingest.value = 0
         else:
@@ -710,7 +716,7 @@ class IngestProApp:
         self.refresh_row(idx)
         self.update_name_preview()
         c = self.clips[idx]
-        self.lbl_preview.value = "  ·  ".join(
+        self.lbl_preview.value = f"{c['cam']}  ·  " + "  ·  ".join(
             f"{e}: {Path(c[f'path_{e}']).name}" for e in "LR" if c[f'path_{e}']) or c['mkey']
         self.request_preview(c)
         if scroll:
