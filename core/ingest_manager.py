@@ -12,7 +12,8 @@ import threading
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from core.metadata import MetadataExtractor, find_child_dir, find_p2_xml, is_valid_tc, read_p2_umid
+from core.metadata import (MetadataExtractor, find_child_dir, find_p2_xml, is_valid_tc, read_p2_umid,
+                           read_avchd_mdpm, avchd_recid, read_avchd_playlist_flags)
 from core.reporting import ReportGenerator
 
 try:
@@ -108,6 +109,7 @@ class IngestManager:
         for root, dirs, files in os.walk(Path(root_path)):
             if Path(root).name.upper() not in VIDEO_DIRS:
                 continue
+            span_flags = read_avchd_playlist_flags(root) if Path(root).name.upper() == "STREAM" else {}
             for f in files:
                 f_lower = f.lower()
                 if not f_lower.endswith(('.mts', '.mxf')):
@@ -118,6 +120,10 @@ class IngestManager:
                 p = Path(root) / f
                 st = p.stat()
                 is_mts = f_lower.endswith('.mts')
+                if is_mts:
+                    recid = avchd_recid(read_avchd_mdpm(p, self.ffmpeg_path, self.is_windows))
+                else:
+                    recid = read_p2_umid(p)
                 found.append({
                     'p': str(p),
                     'id': m.group(2),
@@ -125,7 +131,8 @@ class IngestManager:
                     'cam': "3DA1" if is_mts else "3DP1",
                     's': st.st_size,
                     't': st.st_mtime,
-                    'umid': None if is_mts else read_p2_umid(p),
+                    'recid': recid,
+                    'span': bool(span_flags.get(p.stem)),
                 })
         return found
 
@@ -450,7 +457,7 @@ class IngestManager:
     def update_resolve_csv(self, log_data, dest_folder: Path):
         """Merges new timecodes into the project's Resolve CSV (keeps entries from earlier days)."""
         new = {i['file']: i['start_tc'] for i in log_data
-               if i.get('type') == 'video' and i['file'].upper().endswith('.MXF')
+               if i.get('type') == 'video' and i['file'].upper().endswith(('.MXF', '.MTS'))
                and is_valid_tc(i.get('start_tc'))}
         if not new:
             return None
@@ -589,7 +596,7 @@ class IngestManager:
                     entry[f"status_{eye}"] = "done"
                     st = src.stat()
                     entry[f"src_{eye}"] = {"name": src.name, "size": st.st_size, "mtime": st.st_mtime,
-                                           "umid": clip.get(f"umid_{eye}")}
+                                           "recid": clip.get(f"recid_{eye}")}
                 else:
                     entry[f"status_{eye}"] = "failed"
                     failed_eyes.append(eye)

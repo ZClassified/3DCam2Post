@@ -30,6 +30,10 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - MOV-Prüfung: mit Verifizierung paketgenauer Vergleich (Bild + jede Tonspur) gegen die Quelle, sonst Framezahl-Kontrolle. Unvollständige MOVs werden gelöscht, Abbruch wird sauber behandelt.
 - **L/R-Paarung über UMID:** Die 3DP1 schreibt für L und R dieselbe UMID-Materialnummer; Paarung und Manifest-Abgleich nutzen sie (an zwei Karten mit 42 Clips verifiziert).
 - XML wird erst nach erfolgreichem Video/MOV geschrieben; Reports nur, wenn mindestens ein Clip fertig wurde.
+- **AVCHD (3DA1):** Timecode und Aufnahmebeginn werden aus dem MDPM-Block im Videostream gelesen (Resolve liest beides nicht).
+  Der Timecode landet in der Resolve-CSV, die Aufnahmezeit im Report. Datum + Timecode dienen als Aufnahme-ID für
+  L/R-Paarung und Manifest (frame-genau identisch für L und R, an Originalkarten verifiziert).
+- AVCHD: Dateien, die laut Kamera-Playlist Fortsetzung einer geteilten langen Aufnahme sind, werden als „Fortsetzung“ markiert.
 
 ### Geändert (UI)
 - Neues Layout: Ziel (Stammordner/Projekt/Tag) oben mit Pfadvorschau, kompakte Clip-Tabelle mit L/R-Badges, Stereo-Vorschau L+R nebeneinander, Live-Vorschau des nächsten Dateinamens.

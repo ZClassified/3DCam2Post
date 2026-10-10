@@ -111,6 +111,7 @@ class ReportGenerator:
                     Dur: {esc(str(meta.get('duration_str', 'N/A')))} ({meta.get('frames', 0)} f)<br>
                     Codec: {esc(str(meta.get('codec', 'N/A')))} {esc(str(meta.get('bitrate', '')))}<br>
                     TC: {esc(str(meta.get('start_tc', 'N/A')))}
+                    {('<br>Rec: ' + esc(meta['rec_date'])) if meta.get('rec_date') else ''}
                 </td>
                 <td>{paths_html}</td>
                 <td>{hashes_html}</td>

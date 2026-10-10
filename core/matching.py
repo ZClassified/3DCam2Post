@@ -4,15 +4,18 @@ Clip identity: pairing L/R files from the cards and matching clips against the m
 Camera clip numbers are not unique (AVCHD may restart after formatting, several card
 sets can carry the same numbers). Two signals are used, strongest first:
 
-- P2 (3DP1): the GlobalClipID (UMID) from the clip XML. L and R share the same
-  material number and differ only in the instance number, so pairing is exact.
+- Recording id (`recid`), exact:
+  P2 (3DP1): the GlobalClipID (UMID) from the clip XML. L and R share the same
+  material number and differ only in the instance number.
+  AVCHD (3DA1): recording start + timecode from the MDPM block in the video stream,
+  frame-identical for L and R.
 - Both formats: both eyes of a take are recorded simultaneously, so their file
   timestamps are (nearly) identical.
 
 Without either signal the logic falls back to the plain clip number (previous behaviour).
 """
 
-from core.metadata import umid_material
+from core.metadata import pair_key
 
 # Max. timestamp difference between L and R of the same take (seconds)
 PAIR_TOLERANCE = 120
@@ -31,7 +34,12 @@ def eye_time_diff(clip, eye, mtime):
     return abs(t - mtime)
 
 
-def choose_pair_candidate(candidates, eye, mtime, path, umid=None):
+def _recid(src):
+    """Recording id stored in a manifest source entry (older test builds used "umid")."""
+    return src.get("recid") or src.get("umid")
+
+
+def choose_pair_candidate(candidates, eye, mtime, path, recid=None):
     """
     Picks the clip a scanned file belongs to.
     candidates: clips with the same camera clip number and camera type.
@@ -41,15 +49,15 @@ def choose_pair_candidate(candidates, eye, mtime, path, umid=None):
         if c.get(f"path_{eye}") == path:
             return c  # same file scanned again
     free = [c for c in candidates if not c.get(f"path_{eye}")]
-    mat = umid_material(umid)
+    mat = pair_key(recid)
     scored = []
     for c in free:
         other = _other(eye)
-        other_mat = umid_material(c.get(f"umid_{other}")) if c.get(f"path_{other}") else None
+        other_mat = pair_key(c.get(f"recid_{other}")) if c.get(f"path_{other}") else None
         if mat and other_mat:
             if mat != other_mat:
                 continue  # different recording
-            scored.append((-1, c))  # exact UMID pair beats everything
+            scored.append((-1, c))  # exact recording-id pair beats everything
             continue
         d = eye_time_diff(c, eye, mtime)
         if d is not None and d > PAIR_TOLERANCE:
@@ -72,7 +80,7 @@ def entry_matches(entry, clip):
 
     common = [e for e in known if clip.get(f"path_{e}")]
     for e in common:
-        u_entry, u_clip = known[e].get("umid"), clip.get(f"umid_{e}")
+        u_entry, u_clip = _recid(known[e]), clip.get(f"recid_{e}")
         if u_entry and u_clip:
             if u_entry != u_clip:
                 return False
@@ -86,9 +94,9 @@ def entry_matches(entry, clip):
         return True
 
     # No overlapping eye (e.g. only the R card is inserted now)
-    mats_entry = {umid_material(s.get("umid")) for s in known.values() if s.get("umid")}
-    mats_clip = {umid_material(clip.get(f"umid_{e}")) for e in ("L", "R")
-                 if clip.get(f"path_{e}") and clip.get(f"umid_{e}")}
+    mats_entry = {pair_key(_recid(s)) for s in known.values() if _recid(s)}
+    mats_clip = {pair_key(clip.get(f"recid_{e}")) for e in ("L", "R")
+                 if clip.get(f"path_{e}") and clip.get(f"recid_{e}")}
     if mats_entry and mats_clip:
         return bool(mats_entry & mats_clip)
     times_entry = [s.get("mtime") for s in known.values() if s.get("mtime")]

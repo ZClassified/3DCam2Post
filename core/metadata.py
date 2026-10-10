@@ -59,6 +59,122 @@ def umid_material(umid):
     return umid[32:] if umid and len(umid) == 64 else None
 
 
+def pair_key(recid):
+    """
+    Part of a recording identifier that is identical for both eyes:
+    P2 UMID -> material number, AVCHD "AVCHD:<date>|<tc>" -> the whole id.
+    """
+    if not recid:
+        return None
+    if recid.startswith("AVCHD:"):
+        return recid
+    return umid_material(recid)
+
+
+# ---------------------------------------------------------------- AVCHD (3DA1)
+MDPM_UUID = bytes.fromhex("17EE8C60F84D11D98CD60800200C9A66")
+
+
+def _bcd(b):
+    hi, lo = b >> 4, b & 0x0F
+    if hi > 9 or lo > 9:
+        raise ValueError("not BCD")
+    return hi * 10 + lo
+
+
+def _unescape(data):
+    """Removes H.264 emulation prevention bytes (00 00 03 -> 00 00)."""
+    out, zeros = bytearray(), 0
+    for b in data:
+        if zeros >= 2 and b == 3:
+            zeros = 0
+            continue
+        out.append(b)
+        zeros = zeros + 1 if b == 0 else 0
+    return bytes(out)
+
+
+def parse_mdpm(raw):
+    """Timecode and recording start from the first MDPM SEI (Panasonic/Sony AVCHD) in an H.264 stream."""
+    i = raw.find(MDPM_UUID)
+    if i < 0:
+        return {}
+    seg = _unescape(raw[i + 16:i + 16 + 400])
+    if seg[:4] != b"MDPM":
+        return {}
+    tags = {}
+    for k in range(seg[4]):
+        e = seg[5 + k * 5:10 + k * 5]
+        if len(e) == 5:
+            tags[e[0]] = e[1:]
+    info = {}
+    try:
+        if 0x13 in tags:
+            f, s, m, h = tags[0x13]
+            sep = ";" if f & 0x40 else ":"
+            info['start_tc'] = f"{_bcd(h & 0x3F):02d}:{_bcd(m & 0x7F):02d}:{_bcd(s & 0x7F):02d}{sep}{_bcd(f & 0x3F):02d}"
+    except ValueError:
+        pass
+    try:
+        if 0x18 in tags and 0x19 in tags:
+            a, b = tags[0x18], tags[0x19]
+            info['rec_date'] = (f"{_bcd(a[1]):02d}{_bcd(a[2]):02d}-{_bcd(a[3]):02d}-{_bcd(b[0]):02d}"
+                                f"T{_bcd(b[1]):02d}:{_bcd(b[2]):02d}:{_bcd(b[3]):02d}")
+    except ValueError:
+        pass
+    return info
+
+
+def read_avchd_mdpm(path, ffmpeg_path, is_windows):
+    """Reads the MDPM block of the first video frame of an MTS file ({} if unavailable)."""
+    if not ffmpeg_path or not os.path.exists(ffmpeg_path):
+        return {}
+    try:
+        r = subprocess.run([ffmpeg_path, "-v", "error", "-nostdin", "-i", str(path), "-map", "0:v", "-c", "copy",
+                            "-frames:v", "1", "-bsf:v", "h264_mp4toannexb", "-f", "h264", "-"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           creationflags=0x08000000 if is_windows else 0, timeout=30)
+        return parse_mdpm(r.stdout)
+    except Exception as e:
+        logging.error(f"MDPM read error {path}: {e}")
+        return {}
+
+
+def avchd_recid(info):
+    if info.get('rec_date') and info.get('start_tc'):
+        return f"AVCHD:{info['rec_date']}|{info['start_tc']}"
+    return None
+
+
+def read_avchd_playlist_flags(stream_dir):
+    """
+    Maps clip number (e.g. "20001") -> True if the playlist marks it as continuation of the
+    previous file (connection_condition 6 = one recording split into several files).
+    """
+    flags = {}
+    try:
+        playlist_dir = find_child_dir(Path(stream_dir).parent, "PLAYLIST")
+        if not playlist_dir:
+            return flags
+        for mpl in playlist_dir.iterdir():
+            if mpl.suffix.upper() != ".MPL":
+                continue
+            data = mpl.read_bytes()
+            i = 0
+            while True:
+                i = data.find(b"M2TS", i)
+                if i < 0:
+                    break
+                name = data[i - 5:i].decode("ascii", "replace")
+                cc = data[i + 5] & 0x0F if len(data) > i + 5 else 0
+                if cc == 6:
+                    flags[name] = True
+                i += 4
+    except Exception as e:
+        logging.error(f"Playlist read error {stream_dir}: {e}")
+    return flags
+
+
 class MetadataExtractor:
     def __init__(self, ffmpeg_path, is_windows):
         self.ffmpeg_path = ffmpeg_path
@@ -74,7 +190,14 @@ class MetadataExtractor:
                     if meta.get(k) in (None, '-', '', 0, 'N/A'):
                         meta[k] = v
             return meta
-        return self.extract_ffmpeg_metadata(file_path)
+        meta = self.extract_ffmpeg_metadata(file_path)
+        if Path(file_path).suffix.lower() == ".mts":
+            mdpm = read_avchd_mdpm(file_path, self.ffmpeg_path, self.is_windows)
+            if mdpm.get('start_tc') and not is_valid_tc(meta.get('start_tc')):
+                meta['start_tc'] = mdpm['start_tc']
+            if mdpm.get('rec_date'):
+                meta['rec_date'] = mdpm['rec_date'].replace("T", " ")
+        return meta
 
     def extract_ffmpeg_metadata(self, file_path):
         meta = {'codec': '-', 'fps': '25', 'dur': '-', 'res': '-', 'bitrate': '',

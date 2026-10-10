@@ -180,7 +180,8 @@ class IngestProApp:
     def new_clip(self, key, item):
         return {
             'key': key, 'mkey': key, 'id': item['id'], 'cam': item['cam'],
-            'path_L': None, 'path_R': None, 'size_L': 0, 'size_R': 0, 'mtime_L': None, 'mtime_R': None, 'umid_L': None, 'umid_R': None,
+            'path_L': None, 'path_R': None, 'size_L': 0, 'size_R': 0, 'mtime_L': None, 'mtime_R': None, 'recid_L': None, 'recid_R': None,
+            'span': False,
             'scene': "", 'setting': "", 'take': "", 'cam_id': "",
             'logged': False, 'transfer': False, 'state': 'new',
             'done_L': False, 'done_R': False, 'locked_name': None,
@@ -259,6 +260,8 @@ class IngestProApp:
             return self.tr("status_match", eye=missing), ft.Colors.AMBER_400, None
         if st == 'partial':
             return self.tr("status_partial", eye=missing), ft.Colors.AMBER_200, None
+        if c.get('span') and not c['logged']:
+            return self.tr("status_span"), ft.Colors.AMBER_400, self.tr("tip_span")
         if c['logged'] and c['transfer']:
             return self.tr("status_logged"), ft.Colors.ON_SURFACE, None
         if c['logged']:
@@ -765,12 +768,12 @@ class IngestProApp:
     def _merge_scan(self, path, found):
         by_key = {c['key']: c for c in self.clips}
         selected_key = self.clips[self.current]['key'] if 0 <= self.current < len(self.clips) else None
-        touched, added, dupes = set(), 0, 0
+        touched, added, dupes, spans = set(), 0, 0, 0
 
         for it in sorted(found, key=lambda x: x['p']):
             eye = it['e']
             group = [c for c in by_key.values() if c['id'] == it['id'] and c['cam'] == it['cam']]
-            c = choose_pair_candidate(group, eye, it.get('t'), it['p'], it.get('umid'))
+            c = choose_pair_candidate(group, eye, it.get('t'), it['p'], it.get('recid'))
             if c is None:
                 key, n = it['id'], 1
                 while key in by_key:
@@ -782,7 +785,9 @@ class IngestProApp:
             if c[f'path_{eye}'] == it['p']:
                 continue
             c[f'path_{eye}'], c[f'size_{eye}'], c[f'mtime_{eye}'] = it['p'], it['s'], it.get('t')
-            c[f'umid_{eye}'] = it.get('umid')
+            c[f'recid_{eye}'] = it.get('recid')
+            c['span'] = c['span'] or it.get('span', False)
+            spans += bool(it.get('span'))
             touched.add(c['key'])
             added += 1
 
@@ -796,6 +801,8 @@ class IngestProApp:
             self.set_status(self.tr("scan_none", path=path), warn=True)
         elif dupes:
             self.set_status(self.tr("scan_dupes", n=dupes), warn=True)
+        elif spans:
+            self.set_status(self.tr("scan_spans", n=spans), warn=True)
         else:
             self.set_status(self.tr("scan_done", n=added, path=path))
         if self.current < 0 and self.clips:
@@ -993,7 +1000,7 @@ class IngestProApp:
                 pre_errors.append(tr("err_missing_src", name=c['mkey']))
                 continue
             jobs.append({'key': c['mkey'], 'bn': bn, 'plans': plans,
-                         'clip': {k: c[k] for k in ('id', 'scene', 'setting', 'take', 'cam_id', 'umid_L', 'umid_R')}})
+                         'clip': {k: c[k] for k in ('id', 'scene', 'setting', 'take', 'cam_id', 'recid_L', 'recid_R')}})
         if not jobs:
             await self.dialog(tr("grp_ingest"), tr("msg_no_copy"), items=pre_errors)
             return
