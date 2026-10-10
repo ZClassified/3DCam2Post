@@ -6,6 +6,33 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
+## [1.2.0] - 2026-10-10
+
+### Behoben (Datensicherheit)
+- **Fehlgeschlagene Kopien wurden als fertig markiert:** Ein Auge gilt jetzt nur noch als `done`, wenn Video und alle Audiospuren fehlerfrei (und ggf. verifiziert) kopiert wurden. Fehler erscheinen als `failed` im Manifest und in der Liste.
+- **Überschreibschutz wiederhergestellt:** Vor dem Start wird geprüft, ob Zieldateien existieren (Rückfrage) und ob zwei Clips denselben Zielnamen hätten (Abbruch).
+- **Resolve-Timecodes für P2:** Fehlender `Path`-Import in `metadata.py` führte dazu, dass P2-Metadaten nie gelesen wurden und die CSV `-` statt Timecodes enthielt.
+- **Resolve-CSV wird zusammengeführt** statt bei jedem Ingest überschrieben (Tag 2 löscht Tag 1 nicht mehr). Ungültige Timecodes werden ignoriert.
+- **Clip-Liste stürzte mit Flet 0.84 ab** (`Colors.SURFACE_VARIANT` existiert nicht mehr).
+- **Fortschritt über 100 % / negative ETA:** Audiospuren werden jetzt in die Gesamtgröße eingerechnet.
+- **Manifest-Abgleich:** Quelldatei-Größe wird gespeichert; gleiche Clip-ID mit anderer Datei wird als „ID-Konflikt“ markiert statt fälschlich als „Komplett“. Doppelte IDs beim Scannen werden nicht mehr verworfen, sondern als `ID~2` angelegt.
+- **Einstellungen in der EXE gingen verloren:** Config liegt jetzt in `%APPDATA%\3DCam2Post` (alte Config wird einmalig übernommen).
+- **Thumbnail-Cache** pro Datei statt pro Clip-ID (keine falschen Vorschauen/Report-Bilder mehr).
+- **Cam-ID** wird pro Clip gespeichert. Teilweise kopierte Clips behalten ihren Namen, damit L/R zusammenpassen.
+- **Thread-Sicherheit:** Alle UI-Updates aus Hintergrund-Threads laufen über den Flet-Event-Loop.
+- **Hotkeys nach Textfeld/Dialog:** Esc/Enter verlassen ein Textfeld, nach Dialogen geht der Fokus zurück an die Hotkeys.
+- MHL: korrekter Tag `xxhash64be`, Pfade mit `/`. HTML-Report escaped Namen und listet Fehler.
+
+### Geändert (UI)
+- Neues Layout: Ziel (Stammordner/Projekt/Tag) oben mit Pfadvorschau, kompakte Clip-Tabelle mit L/R-Badges, Stereo-Vorschau L+R nebeneinander, Live-Vorschau des nächsten Dateinamens.
+- Hotkeys unverändert (`→`, `S`, `E`, `T`, `↑/↓`, `Entf`), Hotkey-Status in der Statusleiste.
+- Ingest-Zusammenfassung vor dem Start (Clips, Größe, freier Speicher, Hinweis auf ungeloggte Clips) und Abschlussdialog mit Fehlerliste, „Zielordner öffnen“ und „Report öffnen“.
+- Bestätigung vor „Liste leeren“. Einstellungen mit Benennungsbeispiel und Schalter für P2-Audio.
+- Verifizierung hasht die Quelle während des Kopierens (ein Lesedurchgang weniger).
+- `requirements.txt`: `flet==0.84.*` (Pillow entfernt, wurde nicht genutzt).
+
+---
+
 ## [1.1.0] - 2026-08-25 15:00:00 +02:00
 
 ### Behoben & Optimiert (Flet Migration Fixes)

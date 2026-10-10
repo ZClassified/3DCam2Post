@@ -20,10 +20,23 @@ The old P2 (MXF) and AVCHD (MTS) formats have their quirks in Stereo 3D, especia
 ### Features
 
 - **Automatic Renaming:** Files (Video, Audio, XML) are meaningfully renamed during the ingest to `Scene_Setting_Take_L/R`. The UI offers handy hotkeys to quickly process the material after a shoot.
-- **Safe Copying:** Chunked-copy with a smooth progress bar and MB/s calculation. Optional MD5 checksum verification to ensure not a single bit gets lost.
+- **Safe Copying:** Chunked-copy with a smooth progress bar, MB/s and ETA. Optional checksum verification (MD5, xxHash or SHA-256) – the source is hashed while copying and the copy is read back and compared. A clip is only marked as done when every file was copied successfully.
 - **DaVinci Resolve Timecode Fix:** Resolve often refuses to read the native timecodes of the old AG-3DP1 cameras. After copying, the tool automatically generates a `Resolve_Timecode_Import.csv`, which elegantly circumvents this problem.
 - **Reporting:** Generates MHL files and clean HTML reports with thumbnails (via FFmpeg) upon request.
-- **Safety First:** Warns you, for example, if a P2 card is missing an audio track, and protects you from accidentally overwriting already backed-up material.
+- **Stereo Preview:** Left and right eye are shown side by side, so you can see at a glance if both eyes belong together.
+- **Safety First:** Warns you if a P2 card is missing an audio track, refuses to copy two clips to the same file name and asks before overwriting already backed-up material. An ingest summary lists every error.
+
+### Hotkeys
+
+| Key | Action |
+|---|---|
+| `→` | Confirm current clip with Scene/Shot/Take and jump to the next one (Take +1) |
+| `S` | Next scene (Shot and Take reset to 1) |
+| `E` | Next shot (Take resets to 1) |
+| `T` | Take +1 |
+| `↑` / `↓` | Select clip |
+| `Del` / `Backspace` | Toggle transfer for the selected clip |
+| `Enter` / `Esc` | Leave a text field (hotkeys are paused while typing) |
 
 ### How to import Timecodes into DaVinci Resolve
 
@@ -41,9 +54,11 @@ The tool is written in Python and uses `flet` for a modern, responsive interface
 You can simply download the pre-compiled standalone `.exe` from the **Releases** page and run it directly. Alternatively, you can run it via Python:
 
 1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt` (or `pip install flet Pillow xxhash`).
+2. Install dependencies: `pip install -r requirements.txt` (Flet 0.84 and xxhash).
 3. Ensure that `ffmpeg` is installed on your system or available in the system path (required for thumbnails and metadata extraction).
 4. Start the app via `python main.py`.
+
+Settings are stored in `%APPDATA%\3DCam2Post\ingest_config.json` (log file next to it).
 
 ---
 
@@ -63,10 +78,23 @@ Die alten P2 (MXF) und AVCHD (MTS) Formate haben gerade in Stereo 3D ihre Tücke
 ### Was das Tool macht
 
 - **Automatisches Umbenennen:** Dateien (Video, Audio, XML) werden beim Ingest direkt sinnvoll nach `Szene_Einstellung_Take_L/R` umbenannt. Die UI bietet dafür praktische Hotkeys, um das Material nach dem Dreh schnell durchzuwinken.
-- **Sicheres Kopieren:** Chunked-Copy mit flüssiger Fortschrittsanzeige und MB/s-Berechnung. Optionale MD5-Prüfsummen-Verifizierung, damit kein Bit verloren geht.
+- **Sicheres Kopieren:** Chunked-Copy mit flüssiger Fortschrittsanzeige, MB/s und Restzeit. Optionale Prüfsummen-Verifizierung (MD5, xxHash oder SHA-256) – die Quelle wird beim Kopieren gehasht und die Kopie zurückgelesen und verglichen. Ein Clip gilt erst als fertig, wenn alle Dateien fehlerfrei kopiert wurden.
 - **DaVinci Resolve Timecode-Fix:** Resolve weigert sich oft, die Timecodes der alten AG-3DP1 Kameras nativ zu lesen. Das Tool generiert nach dem Kopieren automatisch eine `Resolve_Timecode_Import.csv`, womit man dieses Problem umgehen kann.
 - **Reporting:** Erzeugt auf Wunsch MHL-Dateien und übersichtliche HTML-Reports mit Thumbnails (via FFmpeg).
-- **Safety First:** Warnt zum Beispiel, wenn bei P2-Karten mal wieder eine Audiospur fehlt, und schützt durch Warnhinweise davor, bereits gesichertes Material versehentlich zu überschreiben.
+- **Stereo-Vorschau:** Linkes und rechtes Auge nebeneinander – so sieht man sofort, ob beide Seiten zusammengehören.
+- **Safety First:** Warnt, wenn bei P2-Karten eine Audiospur fehlt, verhindert, dass zwei Clips auf denselben Dateinamen kopiert werden, und fragt nach, bevor bereits gesichertes Material überschrieben wird. Am Ende gibt es eine Zusammenfassung mit allen Fehlern.
+
+### Hotkeys
+
+| Taste | Aktion |
+|---|---|
+| `→` | Aktuellen Clip mit Szene/Einst./Take bestätigen und zum nächsten springen (Take +1) |
+| `S` | Nächste Szene (Einst. und Take auf 1) |
+| `E` | Nächste Einstellung (Take auf 1) |
+| `T` | Take +1 |
+| `↑` / `↓` | Clip wählen |
+| `Entf` / `Backspace` | Transfer für den gewählten Clip an/aus |
+| `Enter` / `Esc` | Textfeld verlassen (beim Tippen sind die Hotkeys pausiert) |
 
 ### Wie importiere ich die Timecodes in Resolve?
 
@@ -84,6 +112,8 @@ Das Tool ist in Python geschrieben und nutzt `flet` für eine moderne, responsiv
 Du kannst dir einfach die fertig kompilierte Standalone-Version (`.exe`) unter **Releases** herunterladen und direkt starten. Alternativ kannst du das Tool über Python ausführen:
 
 1. Repository klonen.
-2. Abhängigkeiten installieren: `pip install -r requirements.txt` (oder `pip install flet Pillow xxhash`).
+2. Abhängigkeiten installieren: `pip install -r requirements.txt` (Flet 0.84 und xxhash).
 3. Sicherstellen, dass `ffmpeg` auf dem System installiert bzw. im Systempfad verfügbar ist (wird für Thumbnails und Metadaten-Extraktion benötigt).
 4. Die App über `python main.py` starten.
+
+Die Einstellungen liegen unter `%APPDATA%\3DCam2Post\ingest_config.json` (Logdatei daneben).
