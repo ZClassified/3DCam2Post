@@ -670,7 +670,7 @@ class IngestProApp:
             return
         self._dialog_open = True
         dlg = SettingsDialog(self.page, dict(self.settings), HAS_XXHASH, self.tr,
-                             self.on_settings_saved, self.open_manual, APP_VERSION,
+                             self.on_settings_saved, APP_VERSION,
                              on_close=self._on_dialog_closed)
         dlg.open()
 
@@ -685,15 +685,6 @@ class IngestProApp:
         self.build_ui()
         self.refresh()
         self.page.update()
-
-    def open_manual(self):
-        lang = self.settings.get("language", "de")
-        p = resource_path("3DC2P Manual DE.pdf" if lang == "de" else "3DC2P Manual ENG.pdf")
-        if p.exists():
-            open_path(p)
-        else:
-            self.set_status(self.tr("err_manual"), warn=True)
-            self.page.update()
 
     # ================================================================ list handlers
     async def on_row_click(self, e):

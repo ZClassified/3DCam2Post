@@ -45,6 +45,11 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - Verifizierung hasht die Quelle während des Kopierens (ein Lesedurchgang weniger).
 - `requirements.txt`: `flet==0.84.*` (Pillow entfernt, wurde nicht genutzt).
 
+### Entfernt
+- `resolve_tc_export.py` (ersetzt durch die eingebaute CSV und die MOV-Ausgabe).
+- Handbuch-Button in den Einstellungen (die PDFs waren nicht Teil des Repos).
+- README neu geschrieben.
+
 ---
 
 ## [1.1.0] - 2026-08-25 15:00:00 +02:00

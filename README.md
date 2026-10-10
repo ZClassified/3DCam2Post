@@ -1,145 +1,151 @@
 # 3DCam2Post
 
-*Read this in [English](#english) | Lese auf [Deutsch](#deutsch)*
+*[English](#english) | [Deutsch](#deutsch)*
 
 ---
 
 <a id="english"></a>
-## 🇬🇧 English
+## English
 
-**A DIT ingest tool for (almost extinct) Stereo 3D cameras.**
+Ingest tool for the Panasonic stereo 3D camcorders **AG-3DP1** (P2, MXF) and **AG-3DA1** (AVCHD, MTS): copies both eyes from the cards, renames them by scene/shot/take and prepares them for DaVinci Resolve.
 
-I originally built this tool for my own workflow. I am fully aware that probably no one seriously shoots in Stereo 3D anymore today. But since there might still be someone out there experimenting with old 3D cameras or trying to rescue old archive data, I am publishing this project.
-
-### Overview
-
-3DCam2Post is a bridge to safely copy material from 3D cameras (like the Panasonic AG-3DP1 or AG-3DA1) to hard drives and prepare it directly for post-production – specifically for DaVinci Resolve.
-
-The old P2 (MXF) and AVCHD (MTS) formats have their quirks in Stereo 3D, especially when it comes to timecodes and Left/Right assignments. This tool takes a lot of this manual labor off your hands.
+I built it for my own workflow. Hardly anyone shoots stereo 3D with these cameras today, but if you still work with them or need to rescue old footage, it may help.
 
 ### Features
 
-- **Automatic Renaming:** Files (Video, Audio, XML) are meaningfully renamed during the ingest to `Scene_Setting_Take_L/R`. The UI offers handy hotkeys to quickly process the material after a shoot.
-- **Safe Copying:** Chunked-copy with a smooth progress bar, MB/s and ETA. Optional checksum verification (MD5, xxHash or SHA-256) – the source is hashed while copying and the copy is read back and compared. A clip is only marked as done when every file was copied successfully.
-- **DaVinci Resolve Timecode Fix:** Resolve often refuses to read the native timecodes of the old AG-3DP1 cameras. After copying, the tool automatically generates a `Resolve_Timecode_Import.csv`, which elegantly circumvents this problem.
-- **Reporting:** Generates MHL files and clean HTML reports with thumbnails (via FFmpeg) upon request.
-- **Stereo Preview:** Left and right eye are shown side by side, so you can see at a glance if both eyes belong together.
-- **Safety First:** Warns you if a P2 card is missing an audio track, refuses to copy two clips to the same file name and asks before overwriting already backed-up material. An ingest summary lists every error.
+- Pairs left and right eye automatically (P2 via the clip UMID, AVCHD via recording time and timecode)
+- Logging with hotkeys, files are renamed to `Project_S01_E02_T003_L`
+- Copy with progress, optional checksum verification (MD5, xxHash, SHA-256) with MHL and HTML report
+- Lossless MOV output with timecode and audio, readable by Resolve without extra steps
+- Timecode CSV for Resolve when copying the camera files 1:1
+- Manifest per project: clips already copied are recognised, a missing eye can be added later
+- Checks before start: free space, existing files, duplicate names
 
-### Hotkeys
+### Installation
+
+Download the `.exe` from **Releases** and run it, or run from source (Python 3.10+):
+
+```
+pip install -r requirements.txt
+python main.py
+```
+
+`ffmpeg` must be next to the program or in the system path (needed for preview, metadata and MOV output).
+
+### Usage
+
+1. Choose root folder, project name and shooting day at the top.
+2. **Add source**: select a card or folder (searched for `CONTENTS/VIDEO` and `PRIVATE/AVCHD/BDMV/STREAM`).
+3. Log the clips: set scene/shot/take, confirm with `→`.
+4. **Start ingest**.
 
 | Key | Action |
 |---|---|
-| `→` | Confirm current clip with Scene/Shot/Take and jump to the next one (Take +1) |
-| `S` | Next scene (Shot and Take reset to 1) |
-| `E` | Next shot (Take resets to 1) |
+| `→` | Confirm clip with current scene/shot/take, next clip, take +1 |
+| `S` | Next scene (shot and take reset to 1) |
+| `E` | Next shot (take resets to 1) |
 | `T` | Take +1 |
 | `↑` / `↓` | Select clip |
-| `Del` / `Backspace` | Toggle transfer for the selected clip |
+| `Del` / `Backspace` | Toggle transfer |
 | `Enter` / `Esc` | Leave a text field (hotkeys are paused while typing) |
 
-### Output and DaVinci Resolve
-
-In the settings you can choose how clips are written (P2 and AVCHD):
+### Output modes (Settings)
 
 | Mode | Result |
 |---|---|
-| 1:1 copy only | copy of the camera files (renamed) – use the Timecode CSV below in Resolve |
-| 1:1 copy + MOV | additionally one `.mov` per eye in the `SCHNITT` folder |
-| MOV only | only the `.mov` files (saves space, no 1:1 copy of the camera files) |
+| 1:1 copy | Camera files renamed, P2 card structure kept. Timecode for Resolve via `Resolve_Timecode_Import.csv` |
+| 1:1 copy + MOV | Additionally one `.mov` per eye in `SCHNITT/` |
+| MOV only | Only `.mov` files (saves space, no 1:1 copy of the camera files) |
 
-The MOV contains picture and audio **losslessly rewrapped** (no re-encoding) plus a timecode track. Resolve reads timecode and audio from it directly – no CSV import needed.
-*Why:* Resolve shows timecode 00:00:00:00 for both cameras: for the 3DP1 whenever it links the video MXF with its separate audio MXFs (even on untouched original cards), for the 3DA1 because the timecode is only stored inside the H.264 stream (MDPM). The tool reads it from there.
+The MOV contains picture and audio rewrapped without re-encoding, plus a timecode track.
+Background: Resolve shows timecode `00:00:00:00` for both cameras. With the 3DP1 this happens as soon as Resolve links the video MXF with its separate audio MXFs (also on untouched cards). The 3DA1 stores timecode only inside the H.264 stream.
 
-### How to import Timecodes into DaVinci Resolve
+**Importing the CSV in Resolve** (1:1 mode): add the clips to the Media Pool, then `File → Import Metadata To → Media Pool`, select the CSV, *Match using: File Name*.
 
-Since Resolve often ignores the native timecode of these old cameras, the generated `Resolve_Timecode_Import.csv` helps:
-1. Drag all copied video clips into the **Media Pool** of DaVinci Resolve.
-2. In the top menu, go to: `File` -> `Import Metadata To` -> `Media Pool...`
-3. Select the `Resolve_Timecode_Import.csv` generated by the tool.
-4. Make sure that **"Match using: File Name"** is selected in the import dialog.
-5. Click OK. Resolve will now apply the correct start timecode to all affected clips.
+### Folder structure
 
-### Installation & Usage
+```
+<root>/<project>/
+  Tag_01/                  (or Szene_01, see settings)
+    LINKS/   RECHTS/       left / right eye
+    SCHNITT/               MOV files in mode "1:1 copy + MOV"
+  ingest_manifest.json
+  Resolve_Timecode_Import.csv
+  Report_<project>_<date>.html, Transfer_<date>.mhl   (with verification)
+```
 
-The tool is written in Python and uses `flet` for a modern, responsive interface. 
-
-You can simply download the pre-compiled standalone `.exe` from the **Releases** page and run it directly. Alternatively, you can run it via Python:
-
-1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt` (Flet 0.84 and xxhash).
-3. Ensure that `ffmpeg` is installed on your system or available in the system path (required for thumbnails and metadata extraction).
-4. Start the app via `python main.py`.
-
-Settings are stored in `%APPDATA%\3DCam2Post\ingest_config.json` (log file next to it).
+Settings are stored in `%APPDATA%\3DCam2Post\ingest_config.json`, the log file next to it.
 
 ---
 
 <a id="deutsch"></a>
-## 🇩🇪 Deutsch
+## Deutsch
 
-**Ein DIT Ingest-Tool für (fast ausgestorbenes) Stereo 3D Kameras.**
+Ingest-Tool für die Panasonic-Stereo-3D-Camcorder **AG-3DP1** (P2, MXF) und **AG-3DA1** (AVCHD, MTS): kopiert beide Augen von den Karten, benennt sie nach Szene/Einstellung/Take um und bereitet sie für DaVinci Resolve vor.
 
-Ich habe dieses Tool ursprünglich für meinen eigenen Workflow gebaut. Mir ist völlig bewusst, dass heutzutage vermutlich niemand mehr ernsthaft in Stereo 3D dreht. Aber da es da draußen vielleicht doch noch den einen oder anderen gibt, der mit alten 3D Kameras experimentiert oder alte Archivdaten retten muss, veröffentliche ich das Projekt.
+Ich habe es für meinen eigenen Workflow gebaut. Mit diesen Kameras dreht heute kaum noch jemand in 3D, aber wer noch damit arbeitet oder altes Material retten muss, kann es vielleicht brauchen.
 
-### Worum geht's?
+### Funktionen
 
-3DCam2Post ist eine Bridge, um Material von 3D Kameras (wie z.B. der Panasonic AG-3DP1 oder AG-3DA1) sicher auf Festplatten zu kopieren und direkt für die Postproduktion – insbesondere für DaVinci Resolve – vorzubereiten. 
+- Ordnet linkes und rechtes Auge automatisch zu (P2 über die Clip-UMID, AVCHD über Aufnahmezeit und Timecode)
+- Loggen per Hotkeys, Umbenennung nach `Projekt_S01_E02_T003_L`
+- Kopieren mit Fortschritt, optional Prüfsummen-Verifizierung (MD5, xxHash, SHA-256) mit MHL- und HTML-Report
+- Verlustfreie MOV-Ausgabe mit Timecode und Ton, die Resolve ohne Zusatzschritt liest
+- Timecode-CSV für Resolve bei 1:1-Kopie der Kameradateien
+- Manifest pro Projekt: bereits kopierte Clips werden erkannt, ein fehlendes Auge kann später ergänzt werden
+- Prüfungen vor dem Start: freier Speicher, vorhandene Dateien, doppelte Namen
 
-Die alten P2 (MXF) und AVCHD (MTS) Formate haben gerade in Stereo 3D ihre Tücken, vor allem wenn es um Timecodes und Left/Right-Zuordnungen geht. Dieses Tool nimmt diese Handarbeit ein Stück weit ab.
+### Installation
 
-### Was das Tool macht
+Die `.exe` unter **Releases** herunterladen und starten, oder aus dem Quellcode (Python 3.10+):
 
-- **Automatisches Umbenennen:** Dateien (Video, Audio, XML) werden beim Ingest direkt sinnvoll nach `Szene_Einstellung_Take_L/R` umbenannt. Die UI bietet dafür praktische Hotkeys, um das Material nach dem Dreh schnell durchzuwinken.
-- **Sicheres Kopieren:** Chunked-Copy mit flüssiger Fortschrittsanzeige, MB/s und Restzeit. Optionale Prüfsummen-Verifizierung (MD5, xxHash oder SHA-256) – die Quelle wird beim Kopieren gehasht und die Kopie zurückgelesen und verglichen. Ein Clip gilt erst als fertig, wenn alle Dateien fehlerfrei kopiert wurden.
-- **DaVinci Resolve Timecode-Fix:** Resolve weigert sich oft, die Timecodes der alten AG-3DP1 Kameras nativ zu lesen. Das Tool generiert nach dem Kopieren automatisch eine `Resolve_Timecode_Import.csv`, womit man dieses Problem umgehen kann.
-- **Reporting:** Erzeugt auf Wunsch MHL-Dateien und übersichtliche HTML-Reports mit Thumbnails (via FFmpeg).
-- **Stereo-Vorschau:** Linkes und rechtes Auge nebeneinander – so sieht man sofort, ob beide Seiten zusammengehören.
-- **Safety First:** Warnt, wenn bei P2-Karten eine Audiospur fehlt, verhindert, dass zwei Clips auf denselben Dateinamen kopiert werden, und fragt nach, bevor bereits gesichertes Material überschrieben wird. Am Ende gibt es eine Zusammenfassung mit allen Fehlern.
+```
+pip install -r requirements.txt
+python main.py
+```
 
-### Hotkeys
+`ffmpeg` muss neben dem Programm oder im Systempfad liegen (für Vorschau, Metadaten und MOV-Ausgabe).
+
+### Bedienung
+
+1. Oben Stammordner, Projektname und Drehtag festlegen.
+2. **Quelle hinzufügen**: Karte oder Ordner wählen (gesucht wird nach `CONTENTS/VIDEO` und `PRIVATE/AVCHD/BDMV/STREAM`).
+3. Clips loggen: Szene/Einstellung/Take setzen, mit `→` bestätigen.
+4. **Ingest starten**.
 
 | Taste | Aktion |
 |---|---|
-| `→` | Aktuellen Clip mit Szene/Einst./Take bestätigen und zum nächsten springen (Take +1) |
+| `→` | Clip mit aktueller Szene/Einst./Take bestätigen, nächster Clip, Take +1 |
 | `S` | Nächste Szene (Einst. und Take auf 1) |
 | `E` | Nächste Einstellung (Take auf 1) |
 | `T` | Take +1 |
 | `↑` / `↓` | Clip wählen |
-| `Entf` / `Backspace` | Transfer für den gewählten Clip an/aus |
+| `Entf` / `Backspace` | Transfer an/aus |
 | `Enter` / `Esc` | Textfeld verlassen (beim Tippen sind die Hotkeys pausiert) |
 
-### Ausgabe und DaVinci Resolve
-
-In den Einstellungen lässt sich wählen, wie Clips geschrieben werden (P2 und AVCHD):
+### Ausgabe-Modi (Einstellungen)
 
 | Modus | Ergebnis |
 |---|---|
-| Nur 1:1-Kopie | Kopie der Kameradateien (umbenannt) – in Resolve die Timecode-CSV (siehe unten) nutzen |
-| 1:1-Kopie + MOV | zusätzlich pro Auge eine `.mov` im Ordner `SCHNITT` |
-| Nur MOV | nur die `.mov`-Dateien (spart Platz, keine 1:1-Kopie der Kameradateien) |
+| 1:1-Kopie | Kameradateien umbenannt, P2-Kartenstruktur bleibt erhalten. Timecode für Resolve über `Resolve_Timecode_Import.csv` |
+| 1:1-Kopie + MOV | Zusätzlich pro Auge eine `.mov` in `SCHNITT/` |
+| Nur MOV | Nur `.mov`-Dateien (spart Platz, keine 1:1-Kopie der Kameradateien) |
 
-Die MOV enthält Bild und Ton **verlustfrei umverpackt** (keine Neukodierung) plus Timecode-Spur. Resolve liest Timecode und Ton direkt – kein CSV-Import nötig.
-*Hintergrund:* Resolve zeigt bei beiden Kameras Timecode 00:00:00:00: bei der 3DP1, sobald es die Video-MXF mit den separaten Ton-MXFs verknüpft (sogar bei unveränderten Originalkarten), bei der 3DA1, weil der Timecode nur im H.264-Datenstrom (MDPM) steckt. Das Tool liest ihn dort aus.
+Die MOV enthält Bild und Ton ohne Neukodierung umverpackt, dazu eine Timecode-Spur.
+Hintergrund: Resolve zeigt bei beiden Kameras Timecode `00:00:00:00`. Bei der 3DP1 passiert das, sobald Resolve die Video-MXF mit den separaten Ton-MXFs verknüpft (auch bei unveränderten Karten). Die 3DA1 speichert den Timecode nur im H.264-Datenstrom.
 
-### Wie importiere ich die Timecodes in Resolve?
+**CSV in Resolve importieren** (1:1-Modus): Clips in den Media Pool legen, dann `File → Import Metadata To → Media Pool`, CSV wählen, *Match using: File Name*.
 
-Da Resolve den nativen Timecode der alten Kameras oft ignoriert, hilft die generierte `Resolve_Timecode_Import.csv`:
-1. Ziehe alle kopierten Videoclips ganz normal in den **Media Pool** von DaVinci Resolve.
-2. Wähle im oberen Menü: `File` -> `Import Metadata To` -> `Media Pool...`
-3. Wähle die vom Tool generierte `Resolve_Timecode_Import.csv` aus.
-4. Achte darauf, dass im Import-Dialog als Abgleich-Kriterium **"Match using: File Name"** ausgewählt ist.
-5. Klicke auf OK. Resolve übernimmt nun den korrekten Start-Timecode für alle betroffenen Clips.
+### Ordnerstruktur
 
-### Installation & Nutzung
+```
+<Stammordner>/<Projekt>/
+  Tag_01/                  (oder Szene_01, siehe Einstellungen)
+    LINKS/   RECHTS/       linkes / rechtes Auge
+    SCHNITT/               MOV-Dateien im Modus „1:1-Kopie + MOV“
+  ingest_manifest.json
+  Resolve_Timecode_Import.csv
+  Report_<Projekt>_<Datum>.html, Transfer_<Datum>.mhl   (mit Verifizierung)
+```
 
-Das Tool ist in Python geschrieben und nutzt `flet` für eine moderne, responsive Benutzeroberfläche. 
-
-Du kannst dir einfach die fertig kompilierte Standalone-Version (`.exe`) unter **Releases** herunterladen und direkt starten. Alternativ kannst du das Tool über Python ausführen:
-
-1. Repository klonen.
-2. Abhängigkeiten installieren: `pip install -r requirements.txt` (Flet 0.84 und xxhash).
-3. Sicherstellen, dass `ffmpeg` auf dem System installiert bzw. im Systempfad verfügbar ist (wird für Thumbnails und Metadaten-Extraktion benötigt).
-4. Die App über `python main.py` starten.
-
-Die Einstellungen liegen unter `%APPDATA%\3DCam2Post\ingest_config.json` (Logdatei daneben).
+Die Einstellungen liegen unter `%APPDATA%\3DCam2Post\ingest_config.json`, die Logdatei daneben.

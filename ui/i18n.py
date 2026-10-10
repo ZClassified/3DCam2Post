@@ -111,8 +111,6 @@ TRANSLATIONS = {
         "out_label": "Ausgabe: {mode}",
         "out_short_p2": "1:1-Kopie", "out_short_p2_mov": "1:1-Kopie + MOV", "out_short_mov": "nur MOV",
         "err_ffmpeg_mov": "Für MOV-Dateien wird FFmpeg benötigt, wurde aber nicht gefunden.",
-        "btn_manual": "Handbuch (PDF)",
-        "err_manual": "Handbuch nicht gefunden",
         "btn_save": "Speichern",
     },
     "en": {
@@ -221,8 +219,6 @@ TRANSLATIONS = {
         "out_label": "Output: {mode}",
         "out_short_p2": "1:1 copy", "out_short_p2_mov": "1:1 copy + MOV", "out_short_mov": "MOV only",
         "err_ffmpeg_mov": "FFmpeg is required for MOV files but was not found.",
-        "btn_manual": "Manual (PDF)",
-        "err_manual": "Manual not found",
         "btn_save": "Save",
     },
 }

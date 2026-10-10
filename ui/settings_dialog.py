@@ -4,14 +4,12 @@ from core.ingest_manager import build_name
 
 
 class SettingsDialog:
-    def __init__(self, page: ft.Page, settings, has_xxhash, tr, on_save, on_open_manual,
-                 app_version="", on_close=None):
+    def __init__(self, page: ft.Page, settings, has_xxhash, tr, on_save, app_version="", on_close=None):
         self.page = page
         self.s = settings  # working copy, only handed back on save
         self.has_xxhash = has_xxhash
         self.tr = tr
         self.on_save_cb = on_save
-        self.on_open_manual = on_open_manual
         self.on_close_cb = on_close
         self.app_version = app_version
         self._saved = False
@@ -52,7 +50,6 @@ class SettingsDialog:
             ]),
             content=self.build_content(),
             actions=[
-                ft.TextButton(tr("btn_manual"), icon=ft.Icons.MENU_BOOK, on_click=lambda e: self.on_open_manual()),
                 ft.TextButton(tr("btn_abort"), on_click=self.close_dialog),
                 ft.FilledButton(tr("btn_save"), on_click=self.save_clicked),
             ],
