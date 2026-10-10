@@ -24,6 +24,7 @@ I built it for my own workflow. Hardly anyone shoots stereo 3D with these camera
 ### Installation
 
 Download `3DCam2Post.exe` from **Releases** and run it. FFmpeg is included, nothing else needs to be installed.
+The exe is not code-signed, so Windows SmartScreen may show a warning on first start (*More info → Run anyway*).
 
 From source (Python 3.10+), `ffmpeg` must be in the system path or next to `main.py`:
 
@@ -32,7 +33,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Build the executable yourself with `.\build.ps1` (bundles the `ffmpeg.exe` found in the path).
+Build the executable yourself with `.\build.ps1` (requires `pip install pyinstaller`, bundles the `ffmpeg.exe` found in the path).
 
 ### Usage
 
@@ -104,6 +105,7 @@ Ich habe es für meinen eigenen Workflow gebaut. Mit diesen Kameras dreht heute 
 ### Installation
 
 `3DCam2Post.exe` unter **Releases** herunterladen und starten. FFmpeg ist enthalten, sonst muss nichts installiert werden.
+Die EXE ist nicht signiert, daher kann Windows SmartScreen beim ersten Start warnen (*Weitere Informationen → Trotzdem ausführen*).
 
 Aus dem Quellcode (Python 3.10+) muss `ffmpeg` im Systempfad oder neben `main.py` liegen:
 
@@ -112,7 +114,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Die EXE selbst bauen: `.\build.ps1` (packt das `ffmpeg.exe` aus dem Systempfad mit ein).
+Die EXE selbst bauen: `.\build.ps1` (benötigt `pip install pyinstaller`, packt das `ffmpeg.exe` aus dem Systempfad mit ein).
 
 ### Bedienung
 
