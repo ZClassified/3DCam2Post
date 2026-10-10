@@ -37,6 +37,7 @@ DEFAULTS = {
     "sort_mode": "Drehtage", "stammordner": "",
     "audio_source": "Links", "strip_audio_eye": False, "copy_audio": True,
     "last_project": "Projekt_Name", "last_day": "1",
+    "output_mode": "p2",
 }
 
 # Clip states that are derived from the manifest and get recomputed on sync
@@ -235,7 +236,10 @@ class IngestProApp:
         return todo or present
 
     def copy_size(self, c):
-        return sum(c[f'size_{e}'] for e in self.eyes_to_copy(c))
+        size = sum(c[f'size_{e}'] for e in self.eyes_to_copy(c))
+        if c['cam'] == "3DP1" and self.settings.get("output_mode") == "p2_mov":
+            size *= 2
+        return size
 
     def clip_root(self, base, c):
         if self.settings["sort_mode"] == "Drehtage":
@@ -422,6 +426,9 @@ class IngestProApp:
 
         # ---------- ingest
         self.lbl_free = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+        mode = self.settings.get("output_mode", "p2")
+        self.lbl_output = ft.Text(tr("out_label", mode=tr(f"out_short_{mode}")), size=12,
+                                  color=ft.Colors.ON_SURFACE_VARIANT, tooltip=tr("desc_output"))
         self.lbl_summary = ft.Text("", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.LIGHT_BLUE_300)
         self.lbl_ingest_warn = ft.Text("", size=12, color=ft.Colors.AMBER_400, visible=False)
         self.pb_ingest = ft.ProgressBar(value=0, visible=False, height=8, border_radius=4)
@@ -434,7 +441,7 @@ class IngestProApp:
                                             disabled=True, height=46)
         ingest_card = self._card(ft.Column([
             ft.Row([ft.Text(tr("grp_ingest"), weight=ft.FontWeight.BOLD), ft.Container(expand=True), self.lbl_free]),
-            self.lbl_summary, self.lbl_ingest_warn, self.pb_ingest,
+            self.lbl_summary, self.lbl_output, self.lbl_ingest_warn, self.pb_ingest,
             ft.Row([self.lbl_current, self.lbl_mbps]),
             ft.Row([self.btn_start, self.btn_cancel]),
         ], spacing=8))
@@ -989,6 +996,9 @@ class IngestProApp:
                          'clip': {k: c[k] for k in ('id', 'scene', 'setting', 'take', 'cam_id', 'umid_L', 'umid_R')}})
         if not jobs:
             await self.dialog(tr("grp_ingest"), tr("msg_no_copy"), items=pre_errors)
+            return
+        if not self.ffmpeg_path and any(planner.needs_ffmpeg(j['plans']) for j in jobs):
+            await self.dialog(tr("grp_ingest"), tr("err_ffmpeg_mov"))
             return
 
         # Two clips must never write to the same file

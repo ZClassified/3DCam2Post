@@ -38,6 +38,19 @@ The old P2 (MXF) and AVCHD (MTS) formats have their quirks in Stereo 3D, especia
 | `Del` / `Backspace` | Toggle transfer for the selected clip |
 | `Enter` / `Esc` | Leave a text field (hotkeys are paused while typing) |
 
+### Output for P2 (AG-3DP1) and DaVinci Resolve
+
+In the settings you can choose how P2 clips are written:
+
+| Mode | Result |
+|---|---|
+| P2 copy only | 1:1 copy of the camera files (renamed) – use the Timecode CSV below in Resolve |
+| P2 copy + MOV | additionally one `.mov` per eye in the `SCHNITT` folder |
+| MOV only | only the `.mov` files (saves space, no 1:1 copy of the camera files) |
+
+The MOV contains picture and all audio tracks **losslessly rewrapped** (no re-encoding) plus a timecode track. Resolve reads timecode and audio from it directly – no CSV import needed.
+*Why:* when Resolve links a 3DP1 video MXF with its separate audio MXFs, it shows timecode 00:00:00:00 – even for untouched original cards.
+
 ### How to import Timecodes into DaVinci Resolve
 
 Since Resolve often ignores the native timecode of these old cameras, the generated `Resolve_Timecode_Import.csv` helps:
@@ -95,6 +108,19 @@ Die alten P2 (MXF) und AVCHD (MTS) Formate haben gerade in Stereo 3D ihre Tücke
 | `↑` / `↓` | Clip wählen |
 | `Entf` / `Backspace` | Transfer für den gewählten Clip an/aus |
 | `Enter` / `Esc` | Textfeld verlassen (beim Tippen sind die Hotkeys pausiert) |
+
+### Ausgabe für P2 (AG-3DP1) und DaVinci Resolve
+
+In den Einstellungen lässt sich wählen, wie P2-Clips geschrieben werden:
+
+| Modus | Ergebnis |
+|---|---|
+| Nur P2-Kopie | 1:1-Kopie der Kameradateien (umbenannt) – in Resolve die Timecode-CSV (siehe unten) nutzen |
+| P2-Kopie + MOV | zusätzlich pro Auge eine `.mov` im Ordner `SCHNITT` |
+| Nur MOV | nur die `.mov`-Dateien (spart Platz, keine 1:1-Kopie der Kameradateien) |
+
+Die MOV enthält Bild und alle Tonspuren **verlustfrei umverpackt** (keine Neukodierung) plus Timecode-Spur. Resolve liest Timecode und Ton direkt – kein CSV-Import nötig.
+*Hintergrund:* Wenn Resolve eine 3DP1-Video-MXF mit ihren separaten Ton-MXFs verknüpft, zeigt es Timecode 00:00:00:00 – sogar bei unveränderten Originalkarten.
 
 ### Wie importiere ich die Timecodes in Resolve?
 

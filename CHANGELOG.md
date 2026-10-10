@@ -23,6 +23,14 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - **Hotkeys nach Textfeld/Dialog:** Esc/Enter verlassen ein Textfeld, nach Dialogen geht der Fokus zurück an die Hotkeys.
 - MHL: korrekter Tag `xxhash64be`, Pfade mit `/`. HTML-Report escaped Namen und listet Fehler.
 
+### Hinzugefügt (Resolve-Timecode ohne CSV)
+- **Ausgabe-Modus für P2 (3DP1):** „Nur P2-Kopie (1:1)“, „P2-Kopie + MOV“ (Ordner `SCHNITT`) oder „Nur MOV“.
+  Die MOV enthält Bild und alle Tonspuren verlustfrei umverpackt (ohne Neukodierung) plus Timecode-Spur.
+  Hintergrund (an Originalkarten getestet): Resolve zeigt bei P2-Clips der 3DP1 den Timecode 00:00:00:00, sobald es Video und separate Tondateien verknüpft – unabhängig von Umbenennung/XML. Aus der MOV liest Resolve Timecode, Ton und Codec korrekt.
+- MOV-Prüfung: mit Verifizierung paketgenauer Vergleich (Bild + jede Tonspur) gegen die Quelle, sonst Framezahl-Kontrolle. Unvollständige MOVs werden gelöscht, Abbruch wird sauber behandelt.
+- **L/R-Paarung über UMID:** Die 3DP1 schreibt für L und R dieselbe UMID-Materialnummer; Paarung und Manifest-Abgleich nutzen sie (an zwei Karten mit 42 Clips verifiziert).
+- XML wird erst nach erfolgreichem Video/MOV geschrieben; Reports nur, wenn mindestens ein Clip fertig wurde.
+
 ### Geändert (UI)
 - Neues Layout: Ziel (Stammordner/Projekt/Tag) oben mit Pfadvorschau, kompakte Clip-Tabelle mit L/R-Badges, Stereo-Vorschau L+R nebeneinander, Live-Vorschau des nächsten Dateinamens.
 - Hotkeys unverändert (`→`, `S`, `E`, `T`, `↑/↓`, `Entf`), Hotkey-Status in der Statusleiste.

@@ -1,6 +1,7 @@
 import os
 import re
 import csv
+import subprocess
 import json
 import time
 import copy
@@ -24,6 +25,8 @@ VIDEO_DIRS = {"VIDEO", "STREAM"}
 CHUNK_SIZE = 8 * 1024 * 1024  # 8 MB
 PROGRESS_INTERVAL = 0.1  # seconds between progress callbacks
 RESOLVE_CSV = "Resolve_Timecode_Import.csv"
+OUTPUT_MODES = ("p2", "p2_mov", "mov")
+MOV_FOLDER = "SCHNITT"
 
 
 def eye_dir(eye):
@@ -78,6 +81,8 @@ class IngestManager:
         self.callbacks = callbacks or {}
         self.cancel_event = threading.Event()
 
+        self.ffmpeg_path = ffmpeg_path
+        self.is_windows = is_windows
         self.metadata = MetadataExtractor(ffmpeg_path, is_windows)
         self.reporting = ReportGenerator(temp_thumb_dir, ffmpeg_path, is_windows)
 
@@ -149,8 +154,27 @@ class IngestManager:
             return eye == "R"
         return True
 
+    def output_mode(self):
+        mode = self.settings.get("output_mode", "p2")
+        return mode if mode in OUTPUT_MODES else "p2"
+
+    def _mov_audio_eye(self, eye):
+        """Which camera eye's audio goes into the MOV of `eye` (None = no audio)."""
+        if not self.settings.get("copy_audio", True):
+            return None
+        src = self.settings.get("audio_source", "Links")
+        if src in ("Links", "Left"):
+            return "L"
+        if src in ("Rechts", "Right"):
+            return "R"
+        return eye
+
     def plan_clip(self, clip, clip_root: Path, bn: str):
-        """Returns a list of per-eye copy plans for a clip (only eyes whose source exists)."""
+        """
+        Returns a list of per-eye plans for a clip (only eyes whose source exists).
+        P2 output depends on output_mode: "p2" (1:1 copy), "p2_mov" (copy + MOV), "mov" (MOV only).
+        """
+        mode = self.output_mode()
         plans = []
         for eye in ('L', 'R'):
             src = clip.get(f'path_{eye}')
@@ -158,46 +182,80 @@ class IngestManager:
                 continue
             src = Path(src)
             is_p2 = src.suffix.lower() == '.mxf'
+            mov_dst = None
             if is_p2:
                 dest_folder = clip_root / eye_dir(eye) / "CONTENTS"
                 video_dst = dest_folder / "VIDEO" / f"{bn}_{eye}{src.suffix}"
+                xml_dst = dest_folder / "CLIP" / f"{bn}_{eye}.XML"
+                if mode == "mov":
+                    dest_folder = clip_root / eye_dir(eye)
+                    video_dst = None
+                    xml_dst = dest_folder / f"{bn}_{eye}.XML"
+                    mov_dst = dest_folder / f"{bn}_{eye}.mov"
+                elif mode == "p2_mov":
+                    mov_dst = clip_root / MOV_FOLDER / f"{bn}_{eye}.mov"
             else:
                 dest_folder = clip_root / eye_dir(eye)
                 video_dst = dest_folder / f"{bn}_{eye}{src.suffix}"
+                xml_dst = None
 
+            tracks = self.find_p2_audio(src) if is_p2 else []
             audio = []
-            if is_p2 and self._wants_audio(eye):
-                for a in self.find_p2_audio(src):
+            if is_p2 and video_dst and self._wants_audio(eye):
+                for a in tracks:
                     suffix = a.stem[-2:]
                     name = f"{bn}_{suffix}.MXF" if self.settings.get("strip_audio_eye") else f"{bn}_{eye}{suffix}.MXF"
                     audio.append((a, dest_folder / "AUDIO" / name))
 
             xml_src = find_p2_xml(src) if is_p2 else None
-            xml_dst = dest_folder / "CLIP" / f"{bn}_{eye}.XML" if is_p2 else None
-
             plans.append({
                 'eye': eye, 'src': src, 'is_p2': is_p2, 'dest_folder': dest_folder,
-                'video_dst': video_dst, 'audio': audio, 'xml_src': xml_src, 'xml_dst': xml_dst,
+                'video_dst': video_dst, 'audio': audio, 'tracks': tracks,
+                'xml_src': xml_src, 'xml_dst': xml_dst if xml_src else None,
+                'mov_dst': mov_dst, 'mov_audio': [],
             })
+
+        # MOV audio: preferred eye per settings, else the eye itself, else the other eye
+        by_eye = {p['eye']: p for p in plans}
+        for p in plans:
+            if not p['mov_dst']:
+                continue
+            pref = self._mov_audio_eye(p['eye'])
+            if pref is None:
+                continue
+            for e in dict.fromkeys([pref, p['eye'], "R" if p['eye'] == "L" else "L"]):
+                if e in by_eye and by_eye[e]['tracks']:
+                    p['mov_audio'] = list(by_eye[e]['tracks'])
+                    break
         return plans
 
     @staticmethod
     def plan_bytes(plans):
         total = 0
         for p in plans:
-            total += p['src'].stat().st_size
-            total += sum(a.stat().st_size for a, _ in p['audio'])
+            v = p['src'].stat().st_size
+            if p['video_dst']:
+                total += v + sum(a.stat().st_size for a, _ in p['audio'])
+            if p['mov_dst']:
+                total += v + sum(a.stat().st_size for a in p['mov_audio'])
         return total
 
     @staticmethod
     def plan_targets(plans):
         out = []
         for p in plans:
-            out.append(p['video_dst'])
+            if p['video_dst']:
+                out.append(p['video_dst'])
             out.extend(dst for _, dst in p['audio'])
             if p['xml_dst']:
                 out.append(p['xml_dst'])
+            if p['mov_dst']:
+                out.append(p['mov_dst'])
         return out
+
+    @staticmethod
+    def needs_ffmpeg(plans):
+        return any(p['mov_dst'] for p in plans)
 
     # ------------------------------------------------------------------ copy
     def _progress(self, force=False):
@@ -280,11 +338,120 @@ class IngestManager:
         xml_dst.parent.mkdir(parents=True, exist_ok=True)
         tree.write(xml_dst, encoding='UTF-8', xml_declaration=True)
 
+    # ------------------------------------------------------------------ mov
+    def _run(self, cmd):
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
+                              creationflags=0x08000000 if self.is_windows else 0)
+
+    def _streamhash(self, path, spec):
+        """MD5 over the compressed packets of one stream (no decoding)."""
+        r = self._run([self.ffmpeg_path, "-v", "error", "-nostdin", "-i", str(path), "-map", spec,
+                       "-c", "copy", "-f", "streamhash", "-hash", "md5", "-"])
+        if r.returncode != 0 or "=" not in r.stdout:
+            raise IOError(r.stderr.strip()[-300:] or f"streamhash failed: {path}")
+        return r.stdout.strip().split("=")[-1]
+
+    def _packet_count(self, path):
+        r = self._run([self.ffmpeg_path, "-v", "error", "-nostdin", "-i", str(path), "-map", "0:v",
+                       "-c", "copy", "-f", "framecrc", "-"])
+        if r.returncode != 0:
+            return None
+        return sum(1 for line in r.stdout.splitlines() if line and not line.startswith("#"))
+
+    def _make_mov(self, plan, meta, copied):
+        """
+        Losslessly rewraps video + audio into one MOV with timecode (Resolve reads TC and audio from it).
+        Inputs are the verified copies when available, otherwise the card files.
+        Returns (ok, hash_or_None, error_or_None).
+        """
+        verify = self.settings.get("verify_copy", False)
+        algo = self.settings.get("hash_algo", "md5")
+        video_in = copied.get(plan['src'], plan['src'])
+        audio_in = [copied.get(a, a) for a in plan['mov_audio']]
+        dst = plan['mov_dst']
+        tmp = dst.with_name(dst.stem + ".part.mov")
+        planned = video_in.stat().st_size + sum(a.stat().st_size for a in audio_in)
+        counted = 0
+
+        def cleanup():
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
+
+        if not self.ffmpeg_path or not os.path.exists(self.ffmpeg_path):
+            self._done_bytes += planned
+            return False, None, "FFmpeg not found - MOV cannot be created"
+
+        self.status(f"MOV: {dst.name}")
+        args = ["-y", "-i", str(video_in)]
+        for a in audio_in:
+            args += ["-i", str(a)]
+        args += ["-map", "0:v"]
+        for i in range(len(audio_in)):
+            args += ["-map", f"{i + 1}:a"]
+        args += ["-c", "copy"]
+        if is_valid_tc(meta.get('start_tc')):
+            args += ["-timecode", meta['start_tc']]
+        args += ["-progress", "pipe:1", "-nostats", str(tmp)]
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            proc = subprocess.Popen([self.ffmpeg_path, "-v", "error", "-nostdin", *args],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
+                                    creationflags=0x08000000 if self.is_windows else 0)
+            for line in proc.stdout:
+                if self.cancel_event.is_set():
+                    proc.terminate()
+                    break
+                if line.startswith("total_size="):
+                    try:
+                        n = min(int(line.split("=")[1]), planned)
+                    except ValueError:
+                        continue
+                    self._done_bytes += n - counted
+                    counted = n
+                    self._progress()
+            proc.wait()
+            err_out = proc.stderr.read()
+            self._done_bytes += planned - counted
+
+            if self.cancel_event.is_set():
+                cleanup()
+                return False, None, None
+            if proc.returncode != 0 or not tmp.exists():
+                cleanup()
+                return False, None, f"MOV {dst.name}: {err_out.strip()[-300:] or 'ffmpeg failed'}"
+
+            if verify:
+                self.status(f"Verify MOV: {dst.name}")
+                if self._streamhash(video_in, "0:v") != self._streamhash(tmp, "0:v"):
+                    cleanup()
+                    return False, None, f"MOV {dst.name}: video packets differ"
+                for i, a in enumerate(audio_in):
+                    if self._streamhash(a, "0:a") != self._streamhash(tmp, f"0:a:{i}"):
+                        cleanup()
+                        return False, None, f"MOV {dst.name}: audio track {i + 1} differs"
+            else:
+                expected = int(meta.get('frames') or 0)
+                got = self._packet_count(tmp)
+                if expected and got is not None and got != expected:
+                    cleanup()
+                    return False, None, f"MOV {dst.name}: {got} frames instead of {expected}"
+
+            os.replace(tmp, dst)
+            return True, (hash_file(dst, algo) if verify else None), None
+        except Exception as e:
+            logging.error(f"MOV error {dst}: {e}", exc_info=True)
+            cleanup()
+            return False, None, f"MOV {dst.name}: {e}"
+
     # ------------------------------------------------------------------ csv
     def update_resolve_csv(self, log_data, dest_folder: Path):
         """Merges new timecodes into the project's Resolve CSV (keeps entries from earlier days)."""
         new = {i['file']: i['start_tc'] for i in log_data
-               if i.get('type') == 'video' and is_valid_tc(i.get('start_tc'))}
+               if i.get('type') == 'video' and i['file'].upper().endswith('.MXF')
+               and is_valid_tc(i.get('start_tc'))}
         if not new:
             return None
         csv_path = Path(dest_folder) / RESOLVE_CSV
@@ -340,32 +507,52 @@ class IngestManager:
                 if self.cancel_event.is_set():
                     break
                 eye, src = plan['eye'], plan['src']
-                ok, v_hash, err = self._copy_file(src, plan['video_dst'])
-                if not ok:
-                    if err:
-                        result['errors'].append(err)
-                        self._cb('on_error', err)
-                        failed_eyes.append(eye)
-                        entry[f"status_{eye}"] = "failed"
-                    continue
+                copied = {}
+                v_hash = mov_hash = None
+
+                if plan['video_dst']:
+                    ok, v_hash, err = self._copy_file(src, plan['video_dst'])
+                    if not ok:
+                        if err:
+                            result['errors'].append(err)
+                            self._cb('on_error', err)
+                            failed_eyes.append(eye)
+                            entry[f"status_{eye}"] = "failed"
+                        continue
+                    copied[src] = plan['video_dst']
 
                 eye_ok = True
                 meta = self.metadata.extract(src)
-                thumbs = []
-                if verify and self.settings.get("generate_thumbs", True) and eye == job['plans'][0]['eye']:
-                    self.status(f"Thumbnails: {plan['video_dst'].name}")
-                    thumbs = self.reporting.create_report_thumbnails(
-                        plan['video_dst'], meta.get('duration_sec'))
-
-                result['files'].append({
-                    'name': plan['video_dst'].name, 'file': plan['video_dst'].name,
-                    'path': str(plan['video_dst']), 'hash': v_hash or "N/A", 'algo': algo,
-                    'size': plan['video_dst'].stat().st_size, 'type': 'video',
-                    'clip_id': key, 'eye': eye, 'meta': meta, 'base_name': bn,
-                    'original_name': src.name, 'start_tc': meta.get('start_tc'), 'thumbs': thumbs,
-                })
 
                 if plan['is_p2']:
+                    if self._wants_audio(eye) and len(plan['tracks']) < 4:
+                        result['warnings'].append(f"{src.name}: {len(plan['tracks'])}/4 audio tracks found")
+                    for a_src, a_dst in plan['audio']:
+                        a_ok, a_hash, a_err = self._copy_file(a_src, a_dst)
+                        if not a_ok:
+                            eye_ok = False
+                            if a_err:
+                                result['errors'].append(a_err)
+                                self._cb('on_error', a_err)
+                            break
+                        copied[a_src] = a_dst
+                        result['files'].append({
+                            'path': str(a_dst), 'hash': a_hash or "N/A", 'algo': algo,
+                            'size': a_dst.stat().st_size, 'type': 'audio',
+                        })
+
+                if eye_ok and plan['mov_dst']:
+                    m_ok, mov_hash, m_err = (False, None, None) if self.cancel_event.is_set()                         else self._make_mov(plan, meta, copied)
+                    if not m_ok:
+                        eye_ok = False
+                        if m_err:
+                            result['errors'].append(m_err)
+                            self._cb('on_error', m_err)
+
+                if self.cancel_event.is_set() and not eye_ok:
+                    break
+
+                if eye_ok and plan['is_p2']:
                     if plan['xml_src']:
                         try:
                             self._write_p2_xml(plan['xml_src'], plan['xml_dst'], f"{bn}_{eye}")
@@ -380,26 +567,25 @@ class IngestManager:
                     else:
                         result['warnings'].append(f"{src.name}: P2 XML missing")
 
-                    if self._wants_audio(eye):
-                        if len(plan['audio']) < 4:
-                            result['warnings'].append(
-                                f"{src.name}: {len(plan['audio'])}/4 audio tracks found")
-                        for a_src, a_dst in plan['audio']:
-                            a_ok, a_hash, a_err = self._copy_file(a_src, a_dst)
-                            if not a_ok:
-                                eye_ok = False
-                                if a_err:
-                                    result['errors'].append(a_err)
-                                    self._cb('on_error', a_err)
-                                break
-                            result['files'].append({
-                                'path': str(a_dst), 'hash': a_hash or "N/A", 'algo': algo,
-                                'size': a_dst.stat().st_size, 'type': 'audio',
-                            })
-
-                if self.cancel_event.is_set() and not eye_ok:
-                    break
                 if eye_ok:
+                    # main entry for report/CSV: the MXF copy, or the MOV in MOV-only mode
+                    main = plan['video_dst'] or plan['mov_dst']
+                    thumbs = []
+                    if verify and self.settings.get("generate_thumbs", True) and eye == job['plans'][0]['eye']:
+                        self.status(f"Thumbnails: {main.name}")
+                        thumbs = self.reporting.create_report_thumbnails(main, meta.get('duration_sec'))
+                    result['files'].append({
+                        'name': main.name, 'file': main.name, 'path': str(main),
+                        'hash': (v_hash if plan['video_dst'] else mov_hash) or "N/A", 'algo': algo,
+                        'size': main.stat().st_size, 'type': 'video',
+                        'clip_id': key, 'eye': eye, 'meta': meta, 'base_name': bn,
+                        'original_name': src.name, 'start_tc': meta.get('start_tc'), 'thumbs': thumbs,
+                    })
+                    if plan['video_dst'] and plan['mov_dst']:
+                        result['files'].append({
+                            'path': str(plan['mov_dst']), 'hash': mov_hash or "N/A", 'algo': algo,
+                            'size': plan['mov_dst'].stat().st_size, 'type': 'mov',
+                        })
                     entry[f"status_{eye}"] = "done"
                     st = src.stat()
                     entry[f"src_{eye}"] = {"name": src.name, "size": st.st_size, "mtime": st.st_mtime,
@@ -425,7 +611,7 @@ class IngestManager:
         result['cancelled'] = self.cancel_event.is_set()
         result['bytes'] = self._done_bytes
 
-        if verify and result['files']:
+        if verify and any(f['type'] == 'video' for f in result['files']):
             self.status("Reports…")
             try:
                 result['mhl'], result['html_report'] = self.reporting.generate_reports(

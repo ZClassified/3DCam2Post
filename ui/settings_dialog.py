@@ -118,6 +118,15 @@ class SettingsDialog:
                 ], spacing=0), value=self.s.get("sort_mode", "Drehtage"), on_change=self._setter("sort_mode")),
                 ft.Divider(),
 
+                self._section(tr("sec_output")),
+                ft.RadioGroup(content=ft.Column([
+                    ft.Radio(value="p2", label=tr("opt_out_p2")),
+                    ft.Radio(value="p2_mov", label=tr("opt_out_p2_mov")),
+                    ft.Radio(value="mov", label=tr("opt_out_mov")),
+                ], spacing=0), value=self.s.get("output_mode", "p2"), on_change=self._setter("output_mode")),
+                ft.Text(tr("desc_output"), size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Divider(),
+
                 self._section(tr("sec_verify")),
                 ft.Switch(label=tr("opt_verify"), value=self.s.get("verify_copy", False),
                           on_change=self._setter("verify_copy", after=self._on_verify)),
