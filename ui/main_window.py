@@ -18,8 +18,9 @@ from core.matching import choose_pair_candidate, resolve_manifest_key
 from core.paths import resource_path, config_path, legacy_config_paths, thumb_dir, file_key
 from ui.i18n import make_tr
 from ui.settings_dialog import SettingsDialog
+from ui.about import ffmpeg_version
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 MANIFEST_FILE = "ingest_manifest.json"
 
 ROW_H = 44
@@ -671,7 +672,8 @@ class IngestProApp:
         self._dialog_open = True
         dlg = SettingsDialog(self.page, dict(self.settings), HAS_XXHASH, self.tr,
                              self.on_settings_saved, APP_VERSION,
-                             on_close=self._on_dialog_closed)
+                             on_close=self._on_dialog_closed,
+                             ffmpeg_info=lambda: ffmpeg_version(self.ffmpeg_path, self.is_windows))
         dlg.open()
 
     def _on_dialog_closed(self):

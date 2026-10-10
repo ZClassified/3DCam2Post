@@ -112,6 +112,12 @@ TRANSLATIONS = {
         "out_short_p2": "1:1-Kopie", "out_short_p2_mov": "1:1-Kopie + MOV", "out_short_mov": "nur MOV",
         "err_ffmpeg_mov": "Für MOV-Dateien wird FFmpeg benötigt, wurde aber nicht gefunden.",
         "btn_save": "Speichern",
+        "btn_about": "Info & Lizenzen",
+        "btn_close": "Schließen",
+        "about_title": "Info & Lizenzen",
+        "about_license": "3DCam2Post ist freie Software: Du kannst sie unter den Bedingungen der GNU General Public License v3.0 weitergeben und verändern. Sie wird ohne jede Gewährleistung bereitgestellt.",
+        "about_components": "Verwendete Komponenten",
+        "about_ffmpeg_note": "FFmpeg wird unverändert als eigenständiges Programm aufgerufen. Lizenztexte und der FFmpeg-Quellcode liegen dem Release bei.",
     },
     "en": {
         "lbl_root": "Root folder",
@@ -220,6 +226,12 @@ TRANSLATIONS = {
         "out_short_p2": "1:1 copy", "out_short_p2_mov": "1:1 copy + MOV", "out_short_mov": "MOV only",
         "err_ffmpeg_mov": "FFmpeg is required for MOV files but was not found.",
         "btn_save": "Save",
+        "btn_about": "About & licenses",
+        "btn_close": "Close",
+        "about_title": "About & licenses",
+        "about_license": "3DCam2Post is free software: you can redistribute and modify it under the terms of the GNU General Public License v3.0. It comes without any warranty.",
+        "about_components": "Components used",
+        "about_ffmpeg_note": "FFmpeg is called unmodified as a separate program. License texts and the FFmpeg source code are included with the release.",
     },
 }
 

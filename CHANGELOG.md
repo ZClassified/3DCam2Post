@@ -6,7 +6,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ---
 
-## [1.2.0] - 2026-10-10
+## [1.3.0] - 2026-10-10
 
 ### Behoben (Datensicherheit)
 - **Fehlgeschlagene Kopien wurden als fertig markiert:** Ein Auge gilt jetzt nur noch als `done`, wenn Video und alle Audiospuren fehlerfrei (und ggf. verifiziert) kopiert wurden. Fehler erscheinen als `failed` im Manifest und in der Liste.
@@ -52,6 +52,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 
 ### Lizenz & Build
 - Lizenz: GPL-3.0 (`LICENSE`), Fremdkomponenten in `THIRD_PARTY_NOTICES.md`.
+- Einstellungen → „Info & Lizenzen“: Version, Lizenzhinweis (GPL-3.0, keine Gewährleistung) und alle verwendeten Komponenten mit Lizenz und Link.
 - `build.ps1`: baut eine einzelne EXE mit eingebautem FFmpeg (keine Installation von FFmpeg mehr nötig) und legt die Lizenztexte für das Release in `dist\licenses` ab.
 
 ---

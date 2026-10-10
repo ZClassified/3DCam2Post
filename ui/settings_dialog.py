@@ -1,16 +1,19 @@
 import flet as ft
 
 from core.ingest_manager import build_name
+from ui.about import build_about_dialog
 
 
 class SettingsDialog:
-    def __init__(self, page: ft.Page, settings, has_xxhash, tr, on_save, app_version="", on_close=None):
+    def __init__(self, page: ft.Page, settings, has_xxhash, tr, on_save, app_version="", on_close=None,
+                 ffmpeg_info=None):
         self.page = page
         self.s = settings  # working copy, only handed back on save
         self.has_xxhash = has_xxhash
         self.tr = tr
         self.on_save_cb = on_save
         self.on_close_cb = on_close
+        self.ffmpeg_info = ffmpeg_info
         self.app_version = app_version
         self._saved = False
 
@@ -50,6 +53,7 @@ class SettingsDialog:
             ]),
             content=self.build_content(),
             actions=[
+                ft.TextButton(tr("btn_about"), icon=ft.Icons.INFO_OUTLINE, on_click=self.show_about),
                 ft.TextButton(tr("btn_abort"), on_click=self.close_dialog),
                 ft.FilledButton(tr("btn_save"), on_click=self.save_clicked),
             ],
@@ -143,6 +147,11 @@ class SettingsDialog:
         self.page.pop_dialog()
         if self.on_save_cb:
             self.on_save_cb(self.s)
+
+    def show_about(self, e=None):
+        info = self.ffmpeg_info() if self.ffmpeg_info else None
+        about = build_about_dialog(self.tr, self.app_version, info, on_close=self.page.pop_dialog)
+        self.page.show_dialog(about)
 
     def open(self):
         self.page.show_dialog(self.dialog)
