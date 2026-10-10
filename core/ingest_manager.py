@@ -111,12 +111,14 @@ class IngestManager:
                 if not m:
                     continue
                 p = Path(root) / f
+                st = p.stat()
                 found.append({
                     'p': str(p),
                     'id': m.group(2),
                     'e': "L" if m.group(1) == "2" else "R",
                     'cam': "3DA1" if f_lower.endswith('.mts') else "3DP1",
-                    's': p.stat().st_size,
+                    's': st.st_size,
+                    't': st.st_mtime,
                 })
         return found
 
@@ -397,7 +399,8 @@ class IngestManager:
                     break
                 if eye_ok:
                     entry[f"status_{eye}"] = "done"
-                    entry[f"src_{eye}"] = {"name": src.name, "size": src.stat().st_size}
+                    st = src.stat()
+                    entry[f"src_{eye}"] = {"name": src.name, "size": st.st_size, "mtime": st.st_mtime}
                 else:
                     entry[f"status_{eye}"] = "failed"
                     failed_eyes.append(eye)

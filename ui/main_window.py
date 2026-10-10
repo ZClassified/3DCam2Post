@@ -14,6 +14,7 @@ from pathlib import Path
 import flet as ft
 
 from core.ingest_manager import IngestManager, build_name, write_json_atomic, HAS_XXHASH
+from core.matching import choose_pair_candidate, resolve_manifest_key
 from core.paths import resource_path, config_path, legacy_config_paths, thumb_dir, file_key
 from ui.i18n import make_tr
 from ui.settings_dialog import SettingsDialog
@@ -39,7 +40,7 @@ DEFAULTS = {
 }
 
 # Clip states that are derived from the manifest and get recomputed on sync
-MANIFEST_STATES = {"complete", "match", "partial", "conflict", "failed", "working"}
+MANIFEST_STATES = {"complete", "match", "partial", "failed", "working"}
 
 
 def fmt_size(b):
@@ -172,21 +173,29 @@ class IngestProApp:
             except Exception as e:
                 logging.error(f"Manifest load error: {e}")
                 self.set_status(f"Manifest: {e}", warn=True)
-        for c in self.clips:
-            self.apply_manifest(c)
+        self.assign_mkeys(self.clips)
 
     # ================================================================ clip model
     def new_clip(self, key, item):
         return {
-            'key': key, 'id': item['id'], 'cam': item['cam'],
-            'path_L': None, 'path_R': None, 'size_L': 0, 'size_R': 0,
+            'key': key, 'mkey': key, 'id': item['id'], 'cam': item['cam'],
+            'path_L': None, 'path_R': None, 'size_L': 0, 'size_R': 0, 'mtime_L': None, 'mtime_R': None,
             'scene': "", 'setting': "", 'take': "", 'cam_id': "",
             'logged': False, 'transfer': False, 'state': 'new',
             'done_L': False, 'done_R': False, 'locked_name': None,
         }
 
+    def assign_mkeys(self, clips):
+        """(Re)assigns manifest keys for the given clips and applies the manifest state to them."""
+        targets = {id(c) for c in clips}
+        taken = {c['mkey'] for c in self.clips if id(c) not in targets}
+        for c in sorted(clips, key=lambda c: c['key']):
+            c['mkey'] = resolve_manifest_key(self.manifest, c, taken)
+            taken.add(c['mkey'])
+            self.apply_manifest(c)
+
     def apply_manifest(self, c):
-        m = self.manifest.get(c['key'])
+        m = self.manifest.get(c['mkey'])
         c['done_L'] = c['done_R'] = False
         c['locked_name'] = None
         if c['state'] in MANIFEST_STATES:
@@ -194,18 +203,8 @@ class IngestProApp:
         if not m:
             return
 
-        conflict = False
         for eye in "LR":
-            if m.get(f"status_{eye}") == "done":
-                src = m.get(f"src_{eye}")
-                if c[f'path_{eye}'] and src and src.get("size") != c[f'size_{eye}']:
-                    conflict = True
-                else:
-                    c[f'done_{eye}'] = True
-        if conflict:
-            c['done_L'] = c['done_R'] = False
-            c['state'], c['transfer'] = 'conflict', False
-            return
+            c[f'done_{eye}'] = m.get(f"status_{eye}") == "done"
 
         c.update(scene=m.get('scene', ""), setting=m.get('setting', ""), take=m.get('take', ""),
                  cam_id=m.get('cam_id', ""), logged=True)
@@ -249,8 +248,6 @@ class IngestProApp:
             return self.tr("status_work"), ft.Colors.LIGHT_BLUE_300, None
         if st == 'failed':
             return self.tr("status_failed"), ft.Colors.RED_400, None
-        if st == 'conflict':
-            return self.tr("status_conflict"), ft.Colors.RED_300, self.tr("tip_conflict")
         if st == 'complete':
             return self.tr("status_complete"), ft.Colors.GREEN_400, None
         missing = "/".join(e for e in "LR" if not c[f'done_{e}'])
@@ -492,7 +489,7 @@ class IngestProApp:
         return ft.Container(
             content=ft.Row([
                 ft.Container(ft.Checkbox(value=c['transfer'], data=i, on_change=self.on_row_check), width=40),
-                ft.Text(c['key'], width=120, weight=ft.FontWeight.BOLD, font_family=MONO, size=13),
+                ft.Text(c['mkey'], width=120, weight=ft.FontWeight.BOLD, font_family=MONO, size=13),
                 ft.Text(c['cam'], width=56, size=12, color=ft.Colors.ON_SURFACE_VARIANT),
                 ft.Row([badge("L"), badge("R")], width=64, spacing=4),
                 ft.Text(name or "–", expand=True, font_family=MONO, size=13,
@@ -711,7 +708,7 @@ class IngestProApp:
         self.update_name_preview()
         c = self.clips[idx]
         self.lbl_preview.value = "  ·  ".join(
-            f"{e}: {Path(c[f'path_{e}']).name}" for e in "LR" if c[f'path_{e}']) or c['key']
+            f"{e}: {Path(c[f'path_{e}']).name}" for e in "LR" if c[f'path_{e}']) or c['mkey']
         self.request_preview(c)
         if scroll:
             self.page.run_task(self._ensure_visible, idx)
@@ -764,28 +761,25 @@ class IngestProApp:
         touched, added, dupes = set(), 0, 0
 
         for it in sorted(found, key=lambda x: x['p']):
-            eye, n, key = it['e'], 1, it['id']
-            while True:
-                c = by_key.get(key)
-                if c is None:
-                    c = by_key[key] = self.new_clip(key, it)
-                    if n > 1:
-                        dupes += 1
-                    break
-                if c['cam'] == it['cam'] and c[f'path_{eye}'] in (None, it['p']):
-                    break
-                n += 1
-                key = f"{it['id']}~{n}"
+            eye = it['e']
+            group = [c for c in by_key.values() if c['id'] == it['id'] and c['cam'] == it['cam']]
+            c = choose_pair_candidate(group, eye, it.get('t'), it['p'])
+            if c is None:
+                key, n = it['id'], 1
+                while key in by_key:
+                    n += 1
+                    key = f"{it['id']}~{n}"
+                c = by_key[key] = self.new_clip(key, it)
+                if n > 1:
+                    dupes += 1
             if c[f'path_{eye}'] == it['p']:
                 continue
-            c[f'path_{eye}'], c[f'size_{eye}'] = it['p'], it['s']
-            touched.add(key)
+            c[f'path_{eye}'], c[f'size_{eye}'], c[f'mtime_{eye}'] = it['p'], it['s'], it.get('t')
+            touched.add(c['key'])
             added += 1
 
         self.clips = sorted(by_key.values(), key=lambda c: c['key'])
-        for c in self.clips:
-            if c['key'] in touched:
-                self.apply_manifest(c)
+        self.assign_mkeys([c for c in self.clips if c['key'] in touched])
 
         keys = [c['key'] for c in self.clips]
         self.current = keys.index(selected_key) if selected_key in keys else -1
@@ -901,7 +895,7 @@ class IngestProApp:
         else:
             c.update(scene=self.scene, setting=self.setting, take=self.take, cam_id=self.cam_id,
                      logged=True, transfer=True)
-            if c['state'] in ('conflict', 'failed'):
+            if c['state'] == 'failed':
                 c['state'] = 'new'
             self.take = inc(self.take)
             self.update_log_fields()
@@ -988,9 +982,9 @@ class IngestProApp:
                     sub[f'path_{eye}'] = None
             plans = planner.plan_clip(sub, self.clip_root(base, c), bn)
             if not plans:
-                pre_errors.append(tr("err_missing_src", name=c['key']))
+                pre_errors.append(tr("err_missing_src", name=c['mkey']))
                 continue
-            jobs.append({'key': c['key'], 'bn': bn, 'plans': plans,
+            jobs.append({'key': c['mkey'], 'bn': bn, 'plans': plans,
                          'clip': {k: c[k] for k in ('id', 'scene', 'setting', 'take', 'cam_id')}})
         if not jobs:
             await self.dialog(tr("grp_ingest"), tr("msg_no_copy"), items=pre_errors)
@@ -1055,7 +1049,7 @@ class IngestProApp:
 
     def _find(self, key):
         for i, c in enumerate(self.clips):
-            if c['key'] == key:
+            if c['mkey'] == key:
                 return i, c
         return -1, None
 

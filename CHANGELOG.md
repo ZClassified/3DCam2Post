@@ -15,7 +15,7 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - **Resolve-CSV wird zusammengeführt** statt bei jedem Ingest überschrieben (Tag 2 löscht Tag 1 nicht mehr). Ungültige Timecodes werden ignoriert.
 - **Clip-Liste stürzte mit Flet 0.84 ab** (`Colors.SURFACE_VARIANT` existiert nicht mehr).
 - **Fortschritt über 100 % / negative ETA:** Audiospuren werden jetzt in die Gesamtgröße eingerechnet.
-- **Manifest-Abgleich:** Quelldatei-Größe wird gespeichert; gleiche Clip-ID mit anderer Datei wird als „ID-Konflikt“ markiert statt fälschlich als „Komplett“. Doppelte IDs beim Scannen werden nicht mehr verworfen, sondern als `ID~2` angelegt.
+- **Clip-Identität:** Größe und Aufnahmezeit jeder Quelldatei werden im Manifest gespeichert. Eine recycelte Clip-Nummer (z.B. nach dem Formatieren) bekommt automatisch einen eigenen Eintrag (`00001~2`) statt fälschlich als „Komplett“ übersprungen zu werden. L/R werden bei gleicher Nummer anhand der Aufnahmezeit gepaart (auch bei mehreren Kartensätzen in beliebiger Reihenfolge). Ohne verwertbare Zeitstempel bzw. bei alten Manifesten gilt das bisherige Verhalten.
 - **Einstellungen in der EXE gingen verloren:** Config liegt jetzt in `%APPDATA%\3DCam2Post` (alte Config wird einmalig übernommen).
 - **Thumbnail-Cache** pro Datei statt pro Clip-ID (keine falschen Vorschauen/Report-Bilder mehr).
 - **Cam-ID** wird pro Clip gespeichert. Teilweise kopierte Clips behalten ihren Namen, damit L/R zusammenpassen.
