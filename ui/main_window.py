@@ -238,7 +238,7 @@ class IngestProApp:
 
     def copy_size(self, c):
         size = sum(c[f'size_{e}'] for e in self.eyes_to_copy(c))
-        if c['cam'] == "3DP1" and self.settings.get("output_mode") == "p2_mov":
+        if self.settings.get("output_mode") == "p2_mov":
             size *= 2
         return size
 

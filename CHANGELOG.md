@@ -34,6 +34,8 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
   Der Timecode landet in der Resolve-CSV, die Aufnahmezeit im Report. Datum + Timecode dienen als Aufnahme-ID für
   L/R-Paarung und Manifest (frame-genau identisch für L und R, an Originalkarten verifiziert).
 - AVCHD: Dateien, die laut Kamera-Playlist Fortsetzung einer geteilten langen Aufnahme sind, werden als „Fortsetzung“ markiert.
+- **MOV-Modi gelten auch für AVCHD:** MTS wird verlustfrei mit eingebettetem Ton und dem ausgelesenen Timecode in eine MOV umverpackt
+  (in Resolve verifiziert). Prüfung: normalisierter Paketvergleich (H.264 ohne AU-Delimiter) bzw. Framezahl.
 
 ### Geändert (UI)
 - Neues Layout: Ziel (Stammordner/Projekt/Tag) oben mit Pfadvorschau, kompakte Clip-Tabelle mit L/R-Badges, Stereo-Vorschau L+R nebeneinander, Live-Vorschau des nächsten Dateinamens.

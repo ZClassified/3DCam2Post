@@ -179,7 +179,8 @@ class IngestManager:
     def plan_clip(self, clip, clip_root: Path, bn: str):
         """
         Returns a list of per-eye plans for a clip (only eyes whose source exists).
-        P2 output depends on output_mode: "p2" (1:1 copy), "p2_mov" (copy + MOV), "mov" (MOV only).
+        Output depends on output_mode: "p2" (1:1 copy), "p2_mov" (copy + MOV), "mov" (MOV only).
+        The mode names come from P2 but apply to AVCHD as well (MOV = MTS rewrapped with timecode).
         """
         mode = self.output_mode()
         plans = []
@@ -205,6 +206,11 @@ class IngestManager:
                 dest_folder = clip_root / eye_dir(eye)
                 video_dst = dest_folder / f"{bn}_{eye}{src.suffix}"
                 xml_dst = None
+                if mode == "mov":
+                    video_dst = None
+                    mov_dst = dest_folder / f"{bn}_{eye}.mov"
+                elif mode == "p2_mov":
+                    mov_dst = clip_root / MOV_FOLDER / f"{bn}_{eye}.mov"
 
             tracks = self.find_p2_audio(src) if is_p2 else []
             audio = []
@@ -350,13 +356,19 @@ class IngestManager:
         return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
                               creationflags=0x08000000 if self.is_windows else 0)
 
-    def _streamhash(self, path, spec):
+    def _streamhash(self, path, spec, bsf=None):
         """MD5 over the compressed packets of one stream (no decoding)."""
         r = self._run([self.ffmpeg_path, "-v", "error", "-nostdin", "-i", str(path), "-map", spec,
-                       "-c", "copy", "-f", "streamhash", "-hash", "md5", "-"])
+                       "-c", "copy", *(["-bsf:v", bsf] if bsf else []), "-f", "streamhash", "-hash", "md5", "-"])
         if r.returncode != 0 or "=" not in r.stdout:
             raise IOError(r.stderr.strip()[-300:] or f"streamhash failed: {path}")
         return r.stdout.strip().split("=")[-1]
+
+    def _stream_count(self, path, kind):
+        """Number of streams of a kind ("a"/"v"), parsed from ffmpeg's input info (no ffprobe needed)."""
+        r = self._run([self.ffmpeg_path, "-hide_banner", "-nostdin", "-i", str(path)])
+        label = {"a": "Audio:", "v": "Video:"}[kind]
+        return sum(1 for line in r.stderr.splitlines() if "Stream #" in line and label in line)
 
     def _packet_count(self, path):
         r = self._run([self.ffmpeg_path, "-v", "error", "-nostdin", "-i", str(path), "-map", "0:v",
@@ -396,6 +408,8 @@ class IngestManager:
         for a in audio_in:
             args += ["-i", str(a)]
         args += ["-map", "0:v"]
+        if not plan['is_p2']:
+            args += ["-map", "0:a?"]  # AVCHD: audio is embedded in the MTS
         for i in range(len(audio_in)):
             args += ["-map", f"{i + 1}:a"]
         args += ["-c", "copy"]
@@ -432,15 +446,24 @@ class IngestManager:
 
             if verify:
                 self.status(f"Verify MOV: {dst.name}")
-                if self._streamhash(video_in, "0:v") != self._streamhash(tmp, "0:v"):
+                # H.264 from MTS is stored with start codes, in MOV with length prefixes and without
+                # access unit delimiters -> compare normalised packets (identical slice data)
+                bsf = None if plan['is_p2'] else "h264_mp4toannexb,filter_units=remove_types=9"
+                if self._streamhash(video_in, "0:v", bsf) != self._streamhash(tmp, "0:v", bsf):
                     cleanup()
                     return False, None, f"MOV {dst.name}: video packets differ"
-                for i, a in enumerate(audio_in):
-                    if self._streamhash(a, "0:a") != self._streamhash(tmp, f"0:a:{i}"):
+                if plan['is_p2']:
+                    pairs = [(a, "0:a", f"0:a:{i}") for i, a in enumerate(audio_in)]
+                else:
+                    n_audio = self._stream_count(video_in, "a")
+                    pairs = [(video_in, f"0:a:{i}", f"0:a:{i}") for i in range(n_audio)]
+                for i, (a, spec_src, spec_mov) in enumerate(pairs):
+                    if self._streamhash(a, spec_src) != self._streamhash(tmp, spec_mov):
                         cleanup()
                         return False, None, f"MOV {dst.name}: audio track {i + 1} differs"
             else:
-                expected = int(meta.get('frames') or 0)
+                # P2: exact frame count from the clip XML; AVCHD: count the source packets
+                expected = int(meta.get('frames') or 0) if plan['is_p2'] else self._packet_count(video_in)
                 got = self._packet_count(tmp)
                 if expected and got is not None and got != expected:
                     cleanup()

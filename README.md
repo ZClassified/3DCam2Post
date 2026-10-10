@@ -38,18 +38,18 @@ The old P2 (MXF) and AVCHD (MTS) formats have their quirks in Stereo 3D, especia
 | `Del` / `Backspace` | Toggle transfer for the selected clip |
 | `Enter` / `Esc` | Leave a text field (hotkeys are paused while typing) |
 
-### Output for P2 (AG-3DP1) and DaVinci Resolve
+### Output and DaVinci Resolve
 
-In the settings you can choose how P2 clips are written:
+In the settings you can choose how clips are written (P2 and AVCHD):
 
 | Mode | Result |
 |---|---|
-| P2 copy only | 1:1 copy of the camera files (renamed) – use the Timecode CSV below in Resolve |
-| P2 copy + MOV | additionally one `.mov` per eye in the `SCHNITT` folder |
+| 1:1 copy only | copy of the camera files (renamed) – use the Timecode CSV below in Resolve |
+| 1:1 copy + MOV | additionally one `.mov` per eye in the `SCHNITT` folder |
 | MOV only | only the `.mov` files (saves space, no 1:1 copy of the camera files) |
 
-The MOV contains picture and all audio tracks **losslessly rewrapped** (no re-encoding) plus a timecode track. Resolve reads timecode and audio from it directly – no CSV import needed.
-*Why:* when Resolve links a 3DP1 video MXF with its separate audio MXFs, it shows timecode 00:00:00:00 – even for untouched original cards.
+The MOV contains picture and audio **losslessly rewrapped** (no re-encoding) plus a timecode track. Resolve reads timecode and audio from it directly – no CSV import needed.
+*Why:* Resolve shows timecode 00:00:00:00 for both cameras: for the 3DP1 whenever it links the video MXF with its separate audio MXFs (even on untouched original cards), for the 3DA1 because the timecode is only stored inside the H.264 stream (MDPM). The tool reads it from there.
 
 ### How to import Timecodes into DaVinci Resolve
 
@@ -109,18 +109,18 @@ Die alten P2 (MXF) und AVCHD (MTS) Formate haben gerade in Stereo 3D ihre Tücke
 | `Entf` / `Backspace` | Transfer für den gewählten Clip an/aus |
 | `Enter` / `Esc` | Textfeld verlassen (beim Tippen sind die Hotkeys pausiert) |
 
-### Ausgabe für P2 (AG-3DP1) und DaVinci Resolve
+### Ausgabe und DaVinci Resolve
 
-In den Einstellungen lässt sich wählen, wie P2-Clips geschrieben werden:
+In den Einstellungen lässt sich wählen, wie Clips geschrieben werden (P2 und AVCHD):
 
 | Modus | Ergebnis |
 |---|---|
-| Nur P2-Kopie | 1:1-Kopie der Kameradateien (umbenannt) – in Resolve die Timecode-CSV (siehe unten) nutzen |
-| P2-Kopie + MOV | zusätzlich pro Auge eine `.mov` im Ordner `SCHNITT` |
+| Nur 1:1-Kopie | Kopie der Kameradateien (umbenannt) – in Resolve die Timecode-CSV (siehe unten) nutzen |
+| 1:1-Kopie + MOV | zusätzlich pro Auge eine `.mov` im Ordner `SCHNITT` |
 | Nur MOV | nur die `.mov`-Dateien (spart Platz, keine 1:1-Kopie der Kameradateien) |
 
-Die MOV enthält Bild und alle Tonspuren **verlustfrei umverpackt** (keine Neukodierung) plus Timecode-Spur. Resolve liest Timecode und Ton direkt – kein CSV-Import nötig.
-*Hintergrund:* Wenn Resolve eine 3DP1-Video-MXF mit ihren separaten Ton-MXFs verknüpft, zeigt es Timecode 00:00:00:00 – sogar bei unveränderten Originalkarten.
+Die MOV enthält Bild und Ton **verlustfrei umverpackt** (keine Neukodierung) plus Timecode-Spur. Resolve liest Timecode und Ton direkt – kein CSV-Import nötig.
+*Hintergrund:* Resolve zeigt bei beiden Kameras Timecode 00:00:00:00: bei der 3DP1, sobald es die Video-MXF mit den separaten Ton-MXFs verknüpft (sogar bei unveränderten Originalkarten), bei der 3DA1, weil der Timecode nur im H.264-Datenstrom (MDPM) steckt. Das Tool liest ihn dort aus.
 
 ### Wie importiere ich die Timecodes in Resolve?
 
