@@ -23,14 +23,16 @@ I built it for my own workflow. Hardly anyone shoots stereo 3D with these camera
 
 ### Installation
 
-Download the `.exe` from **Releases** and run it, or run from source (Python 3.10+):
+Download `3DCam2Post.exe` from **Releases** and run it. FFmpeg is included, nothing else needs to be installed.
+
+From source (Python 3.10+), `ffmpeg` must be in the system path or next to `main.py`:
 
 ```
 pip install -r requirements.txt
 python main.py
 ```
 
-`ffmpeg` must be next to the program or in the system path (needed for preview, metadata and MOV output).
+Build the executable yourself with `.\build.ps1` (bundles the `ffmpeg.exe` found in the path).
 
 ### Usage
 
@@ -76,6 +78,10 @@ Background: Resolve shows timecode `00:00:00:00` for both cameras. With the 3DP1
 
 Settings are stored in `%APPDATA%\3DCam2Post\ingest_config.json`, the log file next to it.
 
+### License
+
+GPL-3.0, see [LICENSE](LICENSE). Bundled third-party components are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ---
 
 <a id="deutsch"></a>
@@ -97,14 +103,16 @@ Ich habe es für meinen eigenen Workflow gebaut. Mit diesen Kameras dreht heute 
 
 ### Installation
 
-Die `.exe` unter **Releases** herunterladen und starten, oder aus dem Quellcode (Python 3.10+):
+`3DCam2Post.exe` unter **Releases** herunterladen und starten. FFmpeg ist enthalten, sonst muss nichts installiert werden.
+
+Aus dem Quellcode (Python 3.10+) muss `ffmpeg` im Systempfad oder neben `main.py` liegen:
 
 ```
 pip install -r requirements.txt
 python main.py
 ```
 
-`ffmpeg` muss neben dem Programm oder im Systempfad liegen (für Vorschau, Metadaten und MOV-Ausgabe).
+Die EXE selbst bauen: `.\build.ps1` (packt das `ffmpeg.exe` aus dem Systempfad mit ein).
 
 ### Bedienung
 
@@ -149,3 +157,7 @@ Hintergrund: Resolve zeigt bei beiden Kameras Timecode `00:00:00:00`. Bei der 3D
 ```
 
 Die Einstellungen liegen unter `%APPDATA%\3DCam2Post\ingest_config.json`, die Logdatei daneben.
+
+### Lizenz
+
+GPL-3.0, siehe [LICENSE](LICENSE). Mitgelieferte Fremdkomponenten stehen in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -50,6 +50,10 @@ Format basiert auf [Keep a Changelog](https://keepachangelog.com/de/1.0.0/).
 - Handbuch-Button in den Einstellungen (die PDFs waren nicht Teil des Repos).
 - README neu geschrieben.
 
+### Lizenz & Build
+- Lizenz: GPL-3.0 (`LICENSE`), Fremdkomponenten in `THIRD_PARTY_NOTICES.md`.
+- `build.ps1`: baut eine einzelne EXE mit eingebautem FFmpeg (keine Installation von FFmpeg mehr nötig) und legt die Lizenztexte für das Release in `dist\licenses` ab.
+
 ---
 
 ## [1.1.0] - 2026-08-25 15:00:00 +02:00
