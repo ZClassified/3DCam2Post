@@ -179,7 +179,7 @@ class IngestProApp:
     def new_clip(self, key, item):
         return {
             'key': key, 'mkey': key, 'id': item['id'], 'cam': item['cam'],
-            'path_L': None, 'path_R': None, 'size_L': 0, 'size_R': 0, 'mtime_L': None, 'mtime_R': None,
+            'path_L': None, 'path_R': None, 'size_L': 0, 'size_R': 0, 'mtime_L': None, 'mtime_R': None, 'umid_L': None, 'umid_R': None,
             'scene': "", 'setting': "", 'take': "", 'cam_id': "",
             'logged': False, 'transfer': False, 'state': 'new',
             'done_L': False, 'done_R': False, 'locked_name': None,
@@ -763,7 +763,7 @@ class IngestProApp:
         for it in sorted(found, key=lambda x: x['p']):
             eye = it['e']
             group = [c for c in by_key.values() if c['id'] == it['id'] and c['cam'] == it['cam']]
-            c = choose_pair_candidate(group, eye, it.get('t'), it['p'])
+            c = choose_pair_candidate(group, eye, it.get('t'), it['p'], it.get('umid'))
             if c is None:
                 key, n = it['id'], 1
                 while key in by_key:
@@ -775,6 +775,7 @@ class IngestProApp:
             if c[f'path_{eye}'] == it['p']:
                 continue
             c[f'path_{eye}'], c[f'size_{eye}'], c[f'mtime_{eye}'] = it['p'], it['s'], it.get('t')
+            c[f'umid_{eye}'] = it.get('umid')
             touched.add(c['key'])
             added += 1
 
@@ -985,7 +986,7 @@ class IngestProApp:
                 pre_errors.append(tr("err_missing_src", name=c['mkey']))
                 continue
             jobs.append({'key': c['mkey'], 'bn': bn, 'plans': plans,
-                         'clip': {k: c[k] for k in ('id', 'scene', 'setting', 'take', 'cam_id')}})
+                         'clip': {k: c[k] for k in ('id', 'scene', 'setting', 'take', 'cam_id', 'umid_L', 'umid_R')}})
         if not jobs:
             await self.dialog(tr("grp_ingest"), tr("msg_no_copy"), items=pre_errors)
             return

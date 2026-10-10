@@ -40,6 +40,25 @@ def find_p2_xml(vid_path) -> Path | None:
     return None
 
 
+def read_p2_umid(vid_path):
+    """GlobalClipID (UMID, 64 hex chars) from the P2 clip XML, or None."""
+    try:
+        xml = find_p2_xml(vid_path)
+        if xml:
+            for elem in ET.parse(xml).getroot().iter():
+                if _local(elem.tag) == "GlobalClipID" and elem.text:
+                    umid = elem.text.strip().upper()
+                    return umid if len(umid) == 64 else None
+    except Exception as e:
+        logging.error(f"P2 UMID error for {vid_path}: {e}")
+    return None
+
+
+def umid_material(umid):
+    """Material number part of a basic UMID – identical for the L and R clip of the 3DP1."""
+    return umid[32:] if umid and len(umid) == 64 else None
+
+
 class MetadataExtractor:
     def __init__(self, ffmpeg_path, is_windows):
         self.ffmpeg_path = ffmpeg_path

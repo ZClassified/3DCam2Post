@@ -11,7 +11,7 @@ import threading
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from core.metadata import MetadataExtractor, find_child_dir, find_p2_xml, is_valid_tc
+from core.metadata import MetadataExtractor, find_child_dir, find_p2_xml, is_valid_tc, read_p2_umid
 from core.reporting import ReportGenerator
 
 try:
@@ -112,13 +112,15 @@ class IngestManager:
                     continue
                 p = Path(root) / f
                 st = p.stat()
+                is_mts = f_lower.endswith('.mts')
                 found.append({
                     'p': str(p),
                     'id': m.group(2),
                     'e': "L" if m.group(1) == "2" else "R",
-                    'cam': "3DA1" if f_lower.endswith('.mts') else "3DP1",
+                    'cam': "3DA1" if is_mts else "3DP1",
                     's': st.st_size,
                     't': st.st_mtime,
+                    'umid': None if is_mts else read_p2_umid(p),
                 })
         return found
 
@@ -400,7 +402,8 @@ class IngestManager:
                 if eye_ok:
                     entry[f"status_{eye}"] = "done"
                     st = src.stat()
-                    entry[f"src_{eye}"] = {"name": src.name, "size": st.st_size, "mtime": st.st_mtime}
+                    entry[f"src_{eye}"] = {"name": src.name, "size": st.st_size, "mtime": st.st_mtime,
+                                           "umid": clip.get(f"umid_{eye}")}
                 else:
                     entry[f"status_{eye}"] = "failed"
                     failed_eyes.append(eye)
