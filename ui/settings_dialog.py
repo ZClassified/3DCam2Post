@@ -1,143 +1,150 @@
 import flet as ft
 
+from core.ingest_manager import build_name
+
+
 class SettingsDialog:
-    def __init__(self, page: ft.Page, defaults, has_xxhash, tr, on_save, on_open_manual, app_version="1.1.0"):
+    def __init__(self, page: ft.Page, settings, has_xxhash, tr, on_save, on_open_manual,
+                 app_version="", on_close=None):
         self.page = page
-        self.defaults = defaults
+        self.s = settings  # working copy, only handed back on save
         self.has_xxhash = has_xxhash
         self.tr = tr
         self.on_save_cb = on_save
         self.on_open_manual = on_open_manual
+        self.on_close_cb = on_close
         self.app_version = app_version
+        self._saved = False
 
-        # State Variables
-        self.lang_var = self.defaults.get("language", "de")
-        self.cam_var = self.defaults.get("use_cam_id", False)
-        self.sort_var = self.defaults.get("sort_mode", "Drehtage")
-        self.pad_s = str(self.defaults.get("padding_s", 2))
-        self.pad_e = str(self.defaults.get("padding_e", 2))
-        self.pad_t = str(self.defaults.get("padding_t", 3))
-        self.verify_var = self.defaults.get("verify_copy", False)
-        self.thumb_var = self.defaults.get("generate_thumbs", True)
-        self.algo_var = self.defaults.get("hash_algo", "md5")
-        self.audio_var = self.defaults.get("audio_source", "Links")
-        self.strip_audio_var = self.defaults.get("strip_audio_eye", False)
+        self.lbl_example = ft.Text("", font_family="Consolas", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.sw_thumbs = ft.Switch(label=tr("opt_thumbs"), value=self.s.get("generate_thumbs", True),
+                                   on_change=self._setter("generate_thumbs"),
+                                   disabled=not self.s.get("verify_copy", False))
+        self.rg_algo = ft.RadioGroup(
+            content=ft.Column([
+                ft.Radio(value="md5", label=tr("opt_md5")),
+                ft.Radio(value="xxhash", label=tr("opt_xx") + ("" if has_xxhash else tr("not_installed")),
+                         disabled=not has_xxhash),
+                ft.Radio(value="sha256", label=tr("opt_sha")),
+            ], spacing=0),
+            value=self.s.get("hash_algo", "md5"), on_change=self._setter("hash_algo"),
+            disabled=not self.s.get("verify_copy", False),
+        )
+        self.audio_opts = ft.Column([
+            ft.Row([
+                ft.Text(tr("lbl_audio_source")),
+                ft.RadioGroup(
+                    content=ft.Row([ft.Radio(value="Links", label=tr("opt_audio_l")),
+                                    ft.Radio(value="Rechts", label=tr("opt_audio_r")),
+                                    ft.Radio(value="Beide", label=tr("opt_audio_b"))]),
+                    value=self.s.get("audio_source", "Links"), on_change=self._setter("audio_source")),
+            ]),
+            ft.Switch(label=tr("opt_strip"), value=self.s.get("strip_audio_eye", False),
+                      on_change=self._setter("strip_audio_eye")),
+        ], disabled=not self.s.get("copy_audio", True))
 
         self.dialog = ft.AlertDialog(
+            modal=True,
             title=ft.Row([
-                ft.Text(self.tr("win_settings"), weight=ft.FontWeight.BOLD),
+                ft.Text(tr("win_settings"), weight=ft.FontWeight.BOLD),
                 ft.Container(expand=True),
-                ft.Text(f"v{self.app_version}", size=12, color=ft.Colors.GREY_500)
+                ft.Text(f"v{app_version}", size=12, color=ft.Colors.ON_SURFACE_VARIANT),
             ]),
             content=self.build_content(),
             actions=[
-                ft.ElevatedButton(self.tr("btn_manual"), on_click=lambda e: self.on_open_manual(), bgcolor=ft.Colors.CYAN_700, color=ft.Colors.WHITE),
-                ft.ElevatedButton(self.tr("btn_save"), on_click=self.save_clicked, bgcolor=ft.Colors.GREEN_700, color=ft.Colors.WHITE)
+                ft.TextButton(tr("btn_manual"), icon=ft.Icons.MENU_BOOK, on_click=lambda e: self.on_open_manual()),
+                ft.TextButton(tr("btn_abort"), on_click=self.close_dialog),
+                ft.FilledButton(tr("btn_save"), on_click=self.save_clicked),
             ],
-            actions_alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            actions_alignment=ft.MainAxisAlignment.END,
+            on_dismiss=self._dismissed,
         )
+        self._update_example()
 
-    def _set_lang(self, e): self.lang_var = e.control.value
-    def _set_cam(self, e): self.cam_var = e.control.value
-    def _set_sort(self, e): self.sort_var = e.control.value
-    def _set_verify(self, e): self.verify_var = e.control.value
-    def _set_thumb(self, e): self.thumb_var = e.control.value
-    def _set_algo(self, e): self.algo_var = e.control.value
-    def _set_audio(self, e): self.audio_var = e.control.value
-    def _set_strip(self, e): self.strip_audio_var = e.control.value
-    def _set_pad_s(self, e): self.pad_s = e.control.value
-    def _set_pad_e(self, e): self.pad_e = e.control.value
-    def _set_pad_t(self, e): self.pad_t = e.control.value
+    def _setter(self, key, cast=None, after=None):
+        def handler(e):
+            v = e.control.value
+            self.s[key] = cast(v) if cast else v
+            if after:
+                after()
+            self._update_example()
+            self.page.update()
+        return handler
+
+    def _on_verify(self):
+        on = self.s.get("verify_copy", False)
+        self.sw_thumbs.disabled = not on
+        self.rg_algo.disabled = not on
+
+    def _on_copy_audio(self):
+        self.audio_opts.disabled = not self.s.get("copy_audio", True)
+
+    def _update_example(self):
+        name = build_name(self.s, self.s.get("last_project") or "Projekt", 1, 2, 3, "A")
+        self.lbl_example.value = self.tr("naming_example", name=f"{name}_L.MXF")
+
+    @staticmethod
+    def _section(title):
+        return ft.Text(title, weight=ft.FontWeight.BOLD, size=15)
+
+    def _pad_dropdown(self, key, rng):
+        return ft.Dropdown(value=str(self.s.get(key, 2)), width=90, dense=True,
+                           options=[ft.dropdown.Option(key=str(i), text=str(i)) for i in rng],
+                           on_select=self._setter(key, int))
 
     def build_content(self):
-        xx_text = self.tr("opt_xx")
-        if not self.has_xxhash: xx_text += " [Not installed]"
-
+        tr = self.tr
         return ft.Container(
-            width=600,
-            height=700,
-            content=ft.Column(
-                scroll=ft.ScrollMode.AUTO,
-                spacing=15,
-                controls=[
-                    # Language
-                    ft.Text(self.tr("sec_lang"), weight=ft.FontWeight.BOLD, size=16),
-                    ft.RadioGroup(
-                        content=ft.Row([ft.Radio(value="de", label="Deutsch"), ft.Radio(value="en", label="English")]),
-                        value=self.lang_var, on_change=self._set_lang
-                    ),
-                    ft.Divider(),
+            width=560, height=620,
+            content=ft.Column(scroll=ft.ScrollMode.AUTO, spacing=12, controls=[
+                self._section(tr("sec_lang")),
+                ft.RadioGroup(content=ft.Row([ft.Radio(value="de", label="Deutsch"),
+                                              ft.Radio(value="en", label="English")]),
+                              value=self.s.get("language", "de"), on_change=self._setter("language")),
+                ft.Divider(),
 
-                    # Advanced
-                    ft.Text(self.tr("sec_advanced"), weight=ft.FontWeight.BOLD, size=16),
-                    ft.Switch(label=self.tr("opt_cam_id"), value=self.cam_var, on_change=self._set_cam),
-                    ft.RadioGroup(
-                        content=ft.Column([
-                            ft.Radio(value="Drehtage", label=self.tr("opt_sort_day")),
-                            ft.Radio(value="Szenen", label=self.tr("opt_sort_scene"))
-                        ]),
-                        value=self.sort_var, on_change=self._set_sort
-                    ),
-                    ft.Row([
-                        ft.Text(self.tr("lbl_digits_s")),
-                        ft.Dropdown(value=self.pad_s, width=80, options=[ft.dropdown.Option(key=str(i), text=str(i)) for i in range(1, 4)], on_select=self._set_pad_s),
-                        ft.Text(self.tr("lbl_digits_e")),
-                        ft.Dropdown(value=self.pad_e, width=80, options=[ft.dropdown.Option(key=str(i), text=str(i)) for i in range(1, 4)], on_select=self._set_pad_e),
-                        ft.Text(self.tr("lbl_digits_t")),
-                        ft.Dropdown(value=self.pad_t, width=80, options=[ft.dropdown.Option(key=str(i), text=str(i)) for i in range(2, 6)], on_select=self._set_pad_t),
-                    ], alignment=ft.MainAxisAlignment.START),
-                    ft.Divider(),
+                self._section(tr("sec_naming")),
+                ft.Switch(label=tr("opt_cam_id"), value=self.s.get("use_cam_id", False),
+                          on_change=self._setter("use_cam_id")),
+                ft.Row([
+                    ft.Text(tr("lbl_digits_s")), self._pad_dropdown("padding_s", range(1, 5)),
+                    ft.Text(tr("lbl_digits_e")), self._pad_dropdown("padding_e", range(1, 5)),
+                    ft.Text(tr("lbl_digits_t")), self._pad_dropdown("padding_t", range(1, 6)),
+                ], spacing=10),
+                self.lbl_example,
+                ft.RadioGroup(content=ft.Column([
+                    ft.Radio(value="Drehtage", label=tr("opt_sort_day")),
+                    ft.Radio(value="Szenen", label=tr("opt_sort_scene")),
+                ], spacing=0), value=self.s.get("sort_mode", "Drehtage"), on_change=self._setter("sort_mode")),
+                ft.Divider(),
 
-                    # Verification
-                    ft.Text(self.tr("sec_verify"), weight=ft.FontWeight.BOLD, size=16),
-                    ft.Switch(label=self.tr("opt_verify"), value=self.verify_var, on_change=self._set_verify),
-                    ft.Switch(label=self.tr("opt_thumbs"), value=self.thumb_var, on_change=self._set_thumb),
-                    ft.Text(self.tr("desc_verify"), color=ft.Colors.GREY_400, size=12),
-                    ft.RadioGroup(
-                        content=ft.Column([
-                            ft.Radio(value="md5", label=self.tr("opt_md5")),
-                            ft.Radio(value="xxhash", label=xx_text, disabled=not self.has_xxhash),
-                            ft.Radio(value="sha256", label=self.tr("opt_sha")),
-                        ]),
-                        value=self.algo_var, on_change=self._set_algo
-                    ),
-                    ft.Divider(),
+                self._section(tr("sec_verify")),
+                ft.Switch(label=tr("opt_verify"), value=self.s.get("verify_copy", False),
+                          on_change=self._setter("verify_copy", after=self._on_verify)),
+                self.sw_thumbs,
+                self.rg_algo,
+                ft.Divider(),
 
-                    # Audio
-                    ft.Text(self.tr("sec_audio"), weight=ft.FontWeight.BOLD, size=16),
-                    ft.RadioGroup(
-                        content=ft.Row([
-                            ft.Radio(value="Links", label=self.tr("opt_audio_l")),
-                            ft.Radio(value="Rechts", label=self.tr("opt_audio_r")),
-                            ft.Radio(value="Beide", label=self.tr("opt_audio_b")),
-                        ]),
-                        value=self.audio_var, on_change=self._set_audio
-                    ),
-                    ft.Switch(label=self.tr("opt_strip"), value=self.strip_audio_var, on_change=self._set_strip)
-                ]
-            )
+                self._section(tr("sec_audio")),
+                ft.Switch(label=tr("opt_copy_audio"), value=self.s.get("copy_audio", True),
+                          on_change=self._setter("copy_audio", after=self._on_copy_audio)),
+                self.audio_opts,
+            ]),
         )
 
     def save_clicked(self, e):
-        self.defaults.update({
-            "language": self.lang_var,
-            "use_cam_id": self.cam_var,
-            "verify_copy": self.verify_var,
-            "generate_thumbs": self.thumb_var,
-            "hash_algo": self.algo_var,
-            "audio_source": self.audio_var,
-            "strip_audio_eye": self.strip_audio_var,
-            "padding_s": int(self.pad_s),
-            "padding_e": int(self.pad_e),
-            "padding_t": int(self.pad_t),
-            "sort_mode": self.sort_var
-        })
-        self.close_dialog()
+        self._saved = True
+        self.page.pop_dialog()
         if self.on_save_cb:
-            self.on_save_cb(self.defaults)
+            self.on_save_cb(self.s)
 
     def open(self):
         self.page.show_dialog(self.dialog)
 
     def close_dialog(self, e=None):
         self.page.pop_dialog()
+        self._dismissed()
+
+    def _dismissed(self, e=None):
+        if not self._saved and self.on_close_cb:
+            self.on_close_cb()

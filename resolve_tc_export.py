@@ -14,7 +14,8 @@ def generate_csv(root_dir):
         
         count = 0
         # Suche rekursiv nach allen XML Dateien
-        for xml_file in Path(root_dir).rglob('*.XML'):
+        for xml_file in Path(root_dir).rglob('*'):
+            if xml_file.suffix.upper() != '.XML': continue
             # Ignoriere versteckte Dateien
             if xml_file.name.startswith('.'): continue
                 
@@ -65,7 +66,7 @@ def main():
     if count > 0:
         messagebox.showinfo(
             "Fertig!", 
-            f"Es wurden Timecodes für {count} Clips gefunden!\n\nDie Datei liegt hier:\n{csv_file}\n\nAnleitung für Resolve:\n1. Alle 42 Clips im Media Pool markieren\n2. Menü: File -> Import Metadata To -> Media Pool\n3. CSV auswählen und bei den Optionen 'Match using: File Name' einstellen."
+            f"Es wurden Timecodes für {count} Clips gefunden!\n\nDie Datei liegt hier:\n{csv_file}\n\nAnleitung für Resolve:\n1. Alle Clips im Media Pool markieren\n2. Menü: File -> Import Metadata To -> Media Pool\n3. CSV auswählen und bei den Optionen 'Match using: File Name' einstellen."
         )
     else:
         messagebox.showwarning("Fehler", "Es konnten keine XML-Dateien mit Timecode in diesem Ordner gefunden werden.")

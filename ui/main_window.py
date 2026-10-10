@@ -1,794 +1,1131 @@
-import sys
 import os
-import subprocess
-import shutil
 import re
-import threading
+import sys
 import json
-import platform
-import tempfile
-import logging
-import time
 import queue
-import base64
+import shutil
+import asyncio
+import logging
+import platform
+import threading
+import subprocess
 from pathlib import Path
 
 import flet as ft
 
-from core.ingest_manager import IngestManager
+from core.ingest_manager import IngestManager, build_name, write_json_atomic, HAS_XXHASH
+from core.paths import resource_path, config_path, legacy_config_paths, thumb_dir, file_key
+from ui.i18n import make_tr
 from ui.settings_dialog import SettingsDialog
 
-try:
-    import xxhash
-    HAS_XXHASH = True
-except ImportError:
-    HAS_XXHASH = False
-
-APP_VERSION = "1.1.0"
-CONFIG_FILE = "ingest_config.json"
+APP_VERSION = "1.2.0"
 MANIFEST_FILE = "ingest_manifest.json"
 
-TRANSLATIONS = {
-    "de": {
-        "title": f"3DCam2Post Bridge v{APP_VERSION} (Flet Edition)",
-        "btn_add_source": "+ QUELL-ORDNER",
-        "btn_clear_list": "Liste leeren",
-        "lbl_project": "Projekt:",
-        "lbl_day": "Tag:",
-        "col_id": "ID", "col_cam": "Kamera", "col_eye": "Auge", "col_size": "Größe", "col_target": "Name", "col_trans": "Transfer", "col_stat": "Status",
-        "grp_log": " Logging ",
-        "lbl_scene": "Szene", "lbl_setting": "Einst.", "lbl_take": "Take", "lbl_cam_id": "Cam-ID",
-        "grp_hotkeys": " Hotkeys ",
-        "hk_scene": "Szene [S]", "hk_setting": "Einst. [E]", "hk_remove": "X [Entf]", "hk_take_plus": "Take+ [T]", "hk_next": "Bestätigen [->]",
-        "lbl_total_size": "Gesamtgröße",
-        "lbl_free_space": "Frei auf Ziel",
-        "btn_choose_root": "STAMMORDNER WÄHLEN",
-        "btn_start": "INGEST STARTEN",
-        "status_ready": "Bereit",
-        "status_work": "Arbeite...",
-        "status_done": "Fertig",
-        "status_complete": "Komplett (L+R)",
-        "status_match": "MATCH: Ergänze ",
-        "status_cancelled": "Ingest abgebrochen!",
-        "target_manual": "Ziel: Manuelle Wahl",
-        "err_manual": "Handbuch nicht gefunden",
-        "err_no_root": "Bitte erst einen Stammordner wählen!",
-        "msg_no_copy": "Nichts zu kopieren.",
-        "err_space": "Zu wenig Speicherplatz!",
-        "warn_space": "Weniger als 100GB frei",
-        "msg_complete": "Ingest abgeschlossen!",
-        "msg_report": "Reports erstellt (HTML & MHL).",
-        "msg_clean": "Projekt komplett! Manifest wurde bereinigt.",
-        "confirm_clear": "Liste leeren?",
-        "msg_manifest_loaded": "Manifest erkannt: Clips synchronisiert.",
-        "win_settings": "Einstellungen",
-        "sec_lang": " Sprache / Language ",
-        "sec_advanced": " Erweiterte Einstellungen ",
-        "opt_cam_id": "Cam-ID im Dateinamen",
-        "opt_sort_day": "Archiv-Sortierung: Nach Drehtagen",
-        "opt_sort_scene": "Archiv-Sortierung: Nach Szenen",
-        "lbl_digits_s": "Stellen Szene:", "lbl_digits_e": "Einstell.:", "lbl_digits_t": "Take:",
-        "sec_verify": " File Verification & Reports ",
-        "opt_verify": "Prüfung aktivieren (MHL & HTML Report)",
-        "opt_thumbs": "Vorschaubilder für HTML-Report generieren",
-        "desc_verify": "Erstellt MHL und HTML Report. Erhöht Datensicherheit.",
-        "opt_md5": "MD5 (Standard)",
-        "opt_xx": "xxHash (High Speed)",
-        "opt_sha": "SHA-256 (High Security)",
-        "sec_audio": " Audio ",
-        "opt_audio_l": "Links", "opt_audio_r": "Rechts", "opt_audio_b": "Beide",
-        "opt_strip": "L/R Suffix bei Audio entfernen",
-        "btn_manual": "📖 HANDBUCH (PDF)",
-        "btn_save": "SPEICHERN",
-        "btn_settings": "Einstellungen"
-    },
-    "en": {
-        "title": f"3DCam2Post Bridge v{APP_VERSION} (Flet Edition)",
-        "btn_add_source": "+ ADD SOURCE",
-        "btn_clear_list": "Clear List",
-        "lbl_project": "Project:",
-        "lbl_day": "Day:",
-        "col_id": "ID", "col_cam": "Camera", "col_eye": "Eye", "col_size": "Size", "col_target": "Name", "col_trans": "Transfer", "col_stat": "Status",
-        "grp_log": " Logging ",
-        "lbl_scene": "Scene", "lbl_setting": "Shot", "lbl_take": "Take", "lbl_cam_id": "Cam-ID",
-        "grp_hotkeys": " Hotkeys ",
-        "hk_scene": "Scene [S]", "hk_setting": "Shot [E]", "hk_remove": "X [Del]", "hk_take_plus": "Take+ [T]", "hk_next": "Confirm [->]",
-        "lbl_total_size": "Total Size",
-        "lbl_free_space": "Free on target",
-        "btn_choose_root": "CHOOSE ROOT",
-        "btn_start": "START INGEST",
-        "status_ready": "Ready",
-        "status_work": "Working...",
-        "status_done": "Done",
-        "status_complete": "Complete (L+R)",
-        "status_match": "MATCH: Merging ",
-        "status_cancelled": "Ingest cancelled!",
-        "target_manual": "Target: Manual Selection",
-        "err_manual": "Manual not found",
-        "err_no_root": "Please select a root folder first!",
-        "msg_no_copy": "Nothing to copy.",
-        "err_space": "Insufficient disk space!",
-        "warn_space": "Less than 100GB free",
-        "msg_complete": "Ingest complete!",
-        "msg_report": "Reports created (HTML & MHL).",
-        "msg_clean": "Project complete! Manifest cleaned up.",
-        "confirm_clear": "Clear list?",
-        "msg_manifest_loaded": "Manifest detected: Clips synchronized.",
-        "win_settings": "Settings",
-        "sec_lang": " Sprache / Language ",
-        "sec_advanced": " Advanced Settings ",
-        "opt_cam_id": "Cam-ID in Filename",
-        "opt_sort_day": "Archive Sorting: By Shooting Day",
-        "opt_sort_scene": "Archive Sorting: By Scene",
-        "lbl_digits_s": "Digits Scene:", "lbl_digits_e": "Shot:", "lbl_digits_t": "Take:",
-        "sec_verify": " File Verification & Reports ",
-        "opt_verify": "Enable Verification (Create MHL & HTML Reports)",
-        "opt_thumbs": "Generate thumbnails for HTML Report",
-        "desc_verify": "Creates MHL (Hash List) and HTML Report.",
-        "opt_md5": "MD5 (Standard)",
-        "opt_xx": "xxHash (High Speed)",
-        "opt_sha": "SHA-256 (High Security)",
-        "sec_audio": " Audio ",
-        "opt_audio_l": "Left", "opt_audio_r": "Right", "opt_audio_b": "Both",
-        "opt_strip": "Remove L/R Suffix from Audio",
-        "btn_manual": "📖 MANUAL (PDF)",
-        "btn_save": "SAVE",
-        "btn_settings": "Settings"
-    }
+ROW_H = 44
+RIGHT_W = 580
+PREVIEW_W, PREVIEW_H = 282, 159
+MONO = "Consolas"
+INVALID_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+LOW_SPACE = 100 * 1024 ** 3
+BLANK_PNG = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+
+DEFAULTS = {
+    "language": "de", "use_cam_id": False, "verify_copy": False,
+    "generate_thumbs": True, "hash_algo": "md5",
+    "padding_s": 2, "padding_e": 2, "padding_t": 3,
+    "sort_mode": "Drehtage", "stammordner": "",
+    "audio_source": "Links", "strip_audio_eye": False, "copy_audio": True,
+    "last_project": "Projekt_Name", "last_day": "1",
 }
 
-def resource_path(relative_path):
+# Clip states that are derived from the manifest and get recomputed on sync
+MANIFEST_STATES = {"complete", "match", "partial", "conflict", "failed", "working"}
+
+
+def fmt_size(b):
+    gb = b / 1024 ** 3
+    if gb >= 1000:
+        return f"{gb / 1024:.2f} TB"
+    if gb >= 1 or b == 0:
+        return f"{gb:.2f} GB"
+    return f"{b / 1024 ** 2:.1f} MB"
+
+
+def inc(value):
     try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    # 1. Direct path in root
-    p = os.path.join(base_path, relative_path)
-    if os.path.exists(p):
-        return p
-    # 2. Path in assets
-    p_assets = os.path.join(base_path, "assets", relative_path)
-    if os.path.exists(p_assets):
-        return p_assets
-    # 3. Path in ui
-    p_ui = os.path.join(base_path, "ui", relative_path)
-    if os.path.exists(p_ui):
-        return p_ui
-    return p
+        return str(int(value) + 1)
+    except (TypeError, ValueError):
+        return "1"
+
+
+def open_path(p):
+    try:
+        if os.name == "nt":
+            os.startfile(p)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(p)])
+        else:
+            subprocess.Popen(["xdg-open", str(p)])
+    except Exception as e:
+        logging.error(f"Open {p} failed: {e}")
+
 
 class IngestProApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.os_type = platform.system()
-        self.is_windows = (self.os_type == "Windows")
+        self.is_windows = platform.system() == "Windows"
 
         ffmpeg_bin = "ffmpeg.exe" if self.is_windows else "ffmpeg"
-        self.ffmpeg_path = resource_path(ffmpeg_bin)
-        if not os.path.exists(self.ffmpeg_path):
-            sys_ffmpeg = shutil.which(ffmpeg_bin)
-            if sys_ffmpeg:
-                self.ffmpeg_path = sys_ffmpeg
+        local_ffmpeg = resource_path(ffmpeg_bin)
+        self.ffmpeg_path = str(local_ffmpeg) if local_ffmpeg.exists() else shutil.which(ffmpeg_bin)
 
-        self.defaults = {
-            "language": "de", "use_cam_id": False, "verify_copy": False,  
-            "generate_thumbs": True, "hash_algo": "md5",
-            "padding_s": 2, "padding_e": 2, "padding_t": 3,
-            "sort_mode": "Drehtage", "stammordner": "",
-            "audio_source": "Links", "strip_audio_eye": False,
-            "copy_video": True, "copy_audio": True
-        }
+        self.settings = dict(DEFAULTS)
         self.load_config()
+        self.tr = make_tr(lambda: self.settings.get("language"))
 
-        self.temp_thumb_dir = Path(tempfile.gettempdir()) / "3D_Ingest_Thumbs"
-        self.temp_thumb_dir.mkdir(parents=True, exist_ok=True)
+        self.thumb_dir = thumb_dir()
+        self._clear_thumb_cache()
 
-        self.all_clips = []
-        self.manifest_data = {} 
-        self.current_index = -1
-        self._text_field_focused = False
+        self.clips = []
+        self.manifest = {}
+        self.current = -1
+        self.busy = False
         self.manager = None
-        
-        # State
-        self.project_name = "Projekt_Name"
-        self.day = "1"
-        self.scene = "1"
-        self.setting = "1"
-        self.take = "1"
-        self.cam_id = "A"
-        self.status_msg = self.tr("status_ready")
+        self._text_focused = False
+        self._dialog_open = False
+        self._list_px = 0.0
+        self._list_h = 600.0
 
-        self.thumb_queue = queue.Queue()
-        self.thumb_thread = threading.Thread(target=self.preview_worker, daemon=True)
-        self.thumb_thread.start()
-        
-        # Pickers
+        self.project_name = self.settings.get("last_project") or "Projekt_Name"
+        self.day = str(self.settings.get("last_day") or "1")
+        self.scene, self.setting, self.take, self.cam_id = "1", "1", "1", "A"
+
+        self.preview_queue = queue.Queue()
+        threading.Thread(target=self._preview_worker, daemon=True).start()
+
         self.src_picker = ft.FilePicker()
         self.root_picker = ft.FilePicker()
         self.page.services.extend([self.src_picker, self.root_picker])
-
         self.page.on_keyboard_event = self.on_keyboard
 
         self.build_ui()
-        if self.defaults["stammordner"]:
-            self.load_manifest()
+        self.load_manifest()
+        self.refresh()
+        if not self.ffmpeg_path:
+            self.set_status(self.tr("ffmpeg_missing"), warn=True)
+        self.page.update()
 
-    def tr(self, key):
-        lang_code = self.defaults.get("language", "de")
-        return TRANSLATIONS.get(lang_code, TRANSLATIONS["de"]).get(key, f"MISSING: {key}")
+    # ================================================================ helpers
+    def _ui(self, fn, *args):
+        """Run fn(*args) on the Flet event loop and push the update (safe from worker threads)."""
+        async def run():
+            fn(*args)
+            self.page.update()
+        try:
+            self.page.run_task(run)
+        except Exception as e:
+            logging.error(f"UI dispatch failed: {e}")
 
-    # --- CONFIG ---
-    def load_config(self):
-        c_path = Path(resource_path(CONFIG_FILE))
-        if c_path.exists():
+    def _clear_thumb_cache(self):
+        for f in self.thumb_dir.glob("*.jpg"):
             try:
-                with open(c_path, "r", encoding="utf-8") as f:
-                    self.defaults.update(json.load(f))
-            except Exception as e:
-                print(f"Config Load Error: {e}")
+                f.unlink()
+            except OSError:
+                pass
+
+    # ================================================================ config / manifest
+    def load_config(self):
+        candidates = [config_path(), *legacy_config_paths()]
+        for p in candidates:
+            if p.exists():
+                try:
+                    with open(p, "r", encoding="utf-8") as f:
+                        self.settings.update(json.load(f))
+                    self.settings.pop("copy_video", None)
+                    break
+                except Exception as e:
+                    logging.error(f"Config load error ({p}): {e}")
 
     def save_config(self):
         try:
-            c_path = Path(resource_path(CONFIG_FILE))
-            with open(c_path, "w", encoding="utf-8") as f:
-                json.dump(self.defaults, f, indent=4)
+            write_json_atomic(config_path(), self.settings)
         except Exception as e:
-            print(f"Config Save Error: {e}")
+            logging.error(f"Config save error: {e}")
 
-    def get_manifest_path(self):
-        if not self.defaults["stammordner"] or not self.project_name:
+    def project_dir(self):
+        root, project = self.settings.get("stammordner"), self.project_name.strip()
+        if not root or not project:
             return None
-        return Path(self.defaults["stammordner"]) / self.project_name / MANIFEST_FILE
+        return Path(root) / project
+
+    def manifest_path(self):
+        d = self.project_dir()
+        return d / MANIFEST_FILE if d else None
 
     def load_manifest(self):
-        path = self.get_manifest_path()
-        self.manifest_data = {}
+        self.manifest = {}
+        path = self.manifest_path()
         if path and path.exists():
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    self.manifest_data = json.load(f)
-                self.sync_clips_with_manifest()
-            except Exception: pass
-
-    def save_manifest(self):
-        path = self.get_manifest_path()
-        if path:
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(self.manifest_data, f, indent=4)
+                    self.manifest = json.load(f)
             except Exception as e:
-                print(f"Manifest Save Error: {e}")
+                logging.error(f"Manifest load error: {e}")
+                self.set_status(f"Manifest: {e}", warn=True)
+        for c in self.clips:
+            self.apply_manifest(c)
 
-    # --- UI BUIDLING ---
-    def _on_tf_focus(self, e):
-        self._text_field_focused = True
+    # ================================================================ clip model
+    def new_clip(self, key, item):
+        return {
+            'key': key, 'id': item['id'], 'cam': item['cam'],
+            'path_L': None, 'path_R': None, 'size_L': 0, 'size_R': 0,
+            'scene': "", 'setting': "", 'take': "", 'cam_id': "",
+            'logged': False, 'transfer': False, 'state': 'new',
+            'done_L': False, 'done_R': False, 'locked_name': None,
+        }
 
-    def _on_tf_blur(self, e):
-        self._text_field_focused = False
+    def apply_manifest(self, c):
+        m = self.manifest.get(c['key'])
+        c['done_L'] = c['done_R'] = False
+        c['locked_name'] = None
+        if c['state'] in MANIFEST_STATES:
+            c['state'] = 'new'
+        if not m:
+            return
+
+        conflict = False
+        for eye in "LR":
+            if m.get(f"status_{eye}") == "done":
+                src = m.get(f"src_{eye}")
+                if c[f'path_{eye}'] and src and src.get("size") != c[f'size_{eye}']:
+                    conflict = True
+                else:
+                    c[f'done_{eye}'] = True
+        if conflict:
+            c['done_L'] = c['done_R'] = False
+            c['state'], c['transfer'] = 'conflict', False
+            return
+
+        c.update(scene=m.get('scene', ""), setting=m.get('setting', ""), take=m.get('take', ""),
+                 cam_id=m.get('cam_id', ""), logged=True)
+        any_done = c['done_L'] or c['done_R']
+        if any_done:
+            c['locked_name'] = m.get('target_name')
+        missing_present = [e for e in "LR" if not c[f'done_{e}'] and c[f'path_{e}']]
+        if c['done_L'] and c['done_R']:
+            c['state'], c['transfer'] = 'complete', False
+        elif any_done and missing_present:
+            c['state'], c['transfer'] = 'match', True
+        elif any_done:
+            c['state'], c['transfer'] = 'partial', False
+        else:
+            failed = "failed" in (m.get("status_L"), m.get("status_R"))
+            c['state'], c['transfer'] = ('failed' if failed else 'new'), True
+
+    def clip_name(self, c):
+        if c.get('locked_name'):
+            return c['locked_name']
+        if not c['logged']:
+            return None
+        return build_name(self.settings, self.project_name.strip(), c['scene'], c['setting'], c['take'], c['cam_id'])
+
+    def eyes_to_copy(self, c):
+        present = [e for e in "LR" if c[f'path_{e}']]
+        todo = [e for e in present if not c[f'done_{e}']]
+        return todo or present
+
+    def copy_size(self, c):
+        return sum(c[f'size_{e}'] for e in self.eyes_to_copy(c))
+
+    def clip_root(self, base, c):
+        if self.settings["sort_mode"] == "Drehtage":
+            return base / f"Tag_{str(self.day).strip().zfill(2)}"
+        return base / f"Szene_{str(c['scene']).zfill(int(self.settings['padding_s']))}"
+
+    def clip_status(self, c):
+        st = c['state']
+        if st == 'working':
+            return self.tr("status_work"), ft.Colors.LIGHT_BLUE_300, None
+        if st == 'failed':
+            return self.tr("status_failed"), ft.Colors.RED_400, None
+        if st == 'conflict':
+            return self.tr("status_conflict"), ft.Colors.RED_300, self.tr("tip_conflict")
+        if st == 'complete':
+            return self.tr("status_complete"), ft.Colors.GREEN_400, None
+        missing = "/".join(e for e in "LR" if not c[f'done_{e}'])
+        if st == 'match':
+            return self.tr("status_match", eye=missing), ft.Colors.AMBER_400, None
+        if st == 'partial':
+            return self.tr("status_partial", eye=missing), ft.Colors.AMBER_200, None
+        if c['logged'] and c['transfer']:
+            return self.tr("status_logged"), ft.Colors.ON_SURFACE, None
+        if c['logged']:
+            return self.tr("status_skip"), ft.Colors.ON_SURFACE_VARIANT, None
+        return self.tr("status_new"), ft.Colors.ON_SURFACE_VARIANT, None
+
+    # ================================================================ UI building
+    def _tf(self, label, value, width, on_change, big=False, on_blur=None):
+        def blur(e):
+            self._set_text_focus(False)
+            if on_blur:
+                on_blur(e)
+        return ft.TextField(
+            label=label, value=value, width=width, on_change=on_change,
+            text_align=ft.TextAlign.CENTER if big else ft.TextAlign.START,
+            text_size=22 if big else 14, dense=not big,
+            on_focus=lambda e: self._set_text_focus(True), on_blur=blur,
+            on_submit=self._leave_text,
+        )
+
+    @staticmethod
+    def _keycap(k):
+        return ft.Container(
+            content=ft.Text(k, size=11, weight=ft.FontWeight.BOLD, font_family=MONO),
+            padding=ft.Padding.symmetric(horizontal=6, vertical=1),
+            border=ft.Border.all(1, ft.Colors.OUTLINE), border_radius=4,
+        )
+
+    def _hk_button(self, key, label, handler):
+        return ft.OutlinedButton(
+            content=ft.Row([self._keycap(key), ft.Text(label, size=13)], spacing=8, tight=True),
+            on_click=lambda e: self._run_hotkey(handler), expand=True,
+        )
+
+    def _card(self, content, padding=16, expand=None):
+        return ft.Container(content=content, padding=padding, border_radius=10,
+                            bgcolor=ft.Colors.SURFACE_CONTAINER, expand=expand)
 
     def build_ui(self):
-        # Header Controls
-        self.tf_project = ft.TextField(
-            label=self.tr("lbl_project"), 
-            value=self.project_name, 
-            width=200, 
-            on_change=self.on_project_change,
-            on_focus=self._on_tf_focus,
-            on_blur=self._on_tf_blur
+        tr = self.tr
+        # ---------- header
+        self.lbl_root = ft.Text(self.settings["stammordner"] or tr("root_none"), size=13,
+                                overflow=ft.TextOverflow.ELLIPSIS, max_lines=1, expand=True)
+        self.root_box = ft.Container(
+            content=ft.Column([
+                ft.Text(tr("lbl_root"), size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Row([ft.Icon(ft.Icons.FOLDER_OUTLINED, size=18), self.lbl_root], spacing=6),
+            ], spacing=0, tight=True),
+            width=340, padding=ft.Padding.symmetric(horizontal=12, vertical=6),
+            border=ft.Border.all(1, ft.Colors.OUTLINE), border_radius=6,
+            on_click=self.pick_root, ink=True, tooltip=self.settings["stammordner"] or None,
         )
-        self.tf_day = ft.TextField(
-            label=self.tr("lbl_day"), 
-            value=self.day, 
-            width=80, 
-            on_change=self.on_day_change,
-            on_focus=self._on_tf_focus,
-            on_blur=self._on_tf_blur
-        )
+        self.tf_project = self._tf(tr("lbl_project"), self.project_name, 220,
+                                   self.on_project_change, on_blur=self.on_project_commit)
+        self.tf_day = self._tf(tr("lbl_day"), self.day, 70, self.on_day_change, on_blur=self.on_day_commit)
+        self.lbl_target = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT, font_family=MONO,
+                                  overflow=ft.TextOverflow.ELLIPSIS, max_lines=1, expand=True)
+        self.btn_settings = ft.IconButton(ft.Icons.SETTINGS, on_click=self.open_settings, tooltip=tr("btn_settings"))
 
         header = ft.Row([
-            ft.ElevatedButton(self.tr("btn_add_source"), icon=ft.Icons.FOLDER_OPEN, on_click=self.pick_source, bgcolor=ft.Colors.BLUE_700, color=ft.Colors.WHITE),
-            ft.TextButton(self.tr("btn_clear_list"), icon=ft.Icons.CLEAR_ALL, on_click=self.clear_list, icon_color=ft.Colors.RED_400),
-            ft.Container(width=20),
-            self.tf_project,
-            self.tf_day,
-            ft.Container(expand=True),
-            ft.IconButton(ft.Icons.SETTINGS, on_click=self.open_settings, tooltip=self.tr("btn_settings"))
-        ], alignment=ft.MainAxisAlignment.START)
+            ft.Column([
+                ft.Text("3DCam2Post", size=20, weight=ft.FontWeight.BOLD),
+                ft.Text("Stereo 3D Ingest", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+            ], spacing=0, tight=True),
+            ft.Container(width=12),
+            self.root_box, self.tf_project, self.tf_day,
+            self.lbl_target,
+            self.btn_settings,
+        ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-        # List Area
-        self.clip_list_view = ft.ListView(expand=True, spacing=10, padding=10)
-        
-        # Right Side (Log & Preview)
-        self.img_preview = ft.Image(src=base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), width=640, height=360, fit=ft.BoxFit.CONTAIN)
-        self.preview_container = ft.Container(
-            content=self.img_preview,
-            width=640, height=360,
-            bgcolor=ft.Colors.BLACK87,
-            border_radius=8,
-            alignment=ft.Alignment.CENTER
+        # ---------- clip list
+        self.btn_add = ft.FilledButton(tr("btn_add_source"), icon=ft.Icons.ADD, on_click=self.pick_source)
+        self.btn_clear = ft.TextButton(tr("btn_clear_list"), icon=ft.Icons.CLEAR_ALL, on_click=self.clear_list)
+        self.lbl_counts = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+        toolbar = ft.Row([self.btn_add, self.btn_clear, ft.Container(expand=True), self.lbl_counts])
+
+        def hcell(text, width=None, expand=None, align=ft.TextAlign.START):
+            return ft.Container(ft.Text(text, size=11, weight=ft.FontWeight.BOLD,
+                                        color=ft.Colors.ON_SURFACE_VARIANT, text_align=align),
+                                width=width, expand=expand)
+        table_header = ft.Container(
+            content=ft.Row([
+                ft.Container(width=40), hcell(tr("col_id"), 120), hcell(tr("col_cam"), 56),
+                hcell(tr("col_eyes"), 64), hcell(tr("col_target"), expand=True),
+                hcell(tr("col_size"), 76, align=ft.TextAlign.RIGHT), hcell(tr("col_stat"), 150),
+            ], spacing=8),
+            padding=ft.Padding.symmetric(horizontal=8, vertical=8),
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGH,
+            border_radius=ft.BorderRadius.only(top_left=8, top_right=8),
         )
-
-        self.tf_scene = ft.TextField(
-            label=self.tr("lbl_scene"), 
-            value=self.scene, 
-            width=100, 
-            text_align=ft.TextAlign.CENTER, 
-            text_size=20, 
-            on_change=self._update_log_state,
-            on_focus=self._on_tf_focus,
-            on_blur=self._on_tf_blur
+        self.list_view = ft.ListView(expand=True, item_extent=ROW_H, on_scroll=self._on_list_scroll,
+                                     scroll_interval=30, on_size_change=self._on_list_size)
+        self.empty_state = ft.Container(
+            content=ft.Column([
+                ft.Icon(ft.Icons.SD_CARD_OUTLINED, size=56, color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Text(tr("empty_title"), size=18, weight=ft.FontWeight.BOLD),
+                ft.Text(tr("empty_hint"), color=ft.Colors.ON_SURFACE_VARIANT, text_align=ft.TextAlign.CENTER),
+                ft.Container(height=8),
+                ft.FilledButton(tr("btn_add_source"), icon=ft.Icons.ADD, on_click=self.pick_source),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True, spacing=8),
+            alignment=ft.Alignment.CENTER, expand=True, padding=40,
         )
-        self.tf_setting = ft.TextField(
-            label=self.tr("lbl_setting"), 
-            value=self.setting, 
-            width=100, 
-            text_align=ft.TextAlign.CENTER, 
-            text_size=20, 
-            on_change=self._update_log_state,
-            on_focus=self._on_tf_focus,
-            on_blur=self._on_tf_blur
+        left = ft.Column([
+            toolbar,
+            ft.Container(
+                content=ft.Column([table_header, self.list_view, self.empty_state], spacing=0, expand=True),
+                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT), border_radius=8, expand=True,
+            ),
+        ], expand=True, spacing=10)
+
+        # ---------- preview
+        def eye_preview(label, color):
+            img = ft.Image(src=BLANK_PNG, width=PREVIEW_W, height=PREVIEW_H, fit=ft.BoxFit.CONTAIN)
+            box = ft.Stack([
+                ft.Container(img, width=PREVIEW_W, height=PREVIEW_H, bgcolor=ft.Colors.BLACK, border_radius=6,
+                             alignment=ft.Alignment.CENTER),
+                ft.Container(ft.Text(label, size=11, weight=ft.FontWeight.BOLD, color=ft.Colors.WHITE),
+                             bgcolor=color, padding=ft.Padding.symmetric(horizontal=6, vertical=2),
+                             border_radius=4, left=6, top=6),
+            ], width=PREVIEW_W, height=PREVIEW_H)
+            return img, box
+        self.img_L, box_L = eye_preview("L", ft.Colors.BLUE_700)
+        self.img_R, box_R = eye_preview("R", ft.Colors.RED_700)
+        self.lbl_preview = ft.Text(tr("preview_none"), size=12, color=ft.Colors.ON_SURFACE_VARIANT,
+                                   font_family=MONO, overflow=ft.TextOverflow.ELLIPSIS, max_lines=1)
+        preview_card = self._card(ft.Column([ft.Row([box_L, box_R], spacing=8), self.lbl_preview], spacing=8),
+                                  padding=8)
+
+        # ---------- logging
+        self.tf_scene = self._tf(tr("lbl_scene"), self.scene, 100, self._update_log_state, big=True)
+        self.tf_setting = self._tf(tr("lbl_setting"), self.setting, 100, self._update_log_state, big=True)
+        self.tf_take = self._tf(tr("lbl_take"), self.take, 100, self._update_log_state, big=True)
+        self.tf_cam_id = self._tf(tr("lbl_cam_id"), self.cam_id, 90, self._update_log_state, big=True)
+        log_fields = [self.tf_scene, self.tf_setting, self.tf_take]
+        if self.settings["use_cam_id"]:
+            log_fields.append(self.tf_cam_id)
+
+        self.lbl_next_name = ft.Text("", size=16, weight=ft.FontWeight.BOLD, font_family=MONO,
+                                     overflow=ft.TextOverflow.ELLIPSIS, max_lines=1)
+        self.lbl_clip_name = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT, font_family=MONO,
+                                     overflow=ft.TextOverflow.ELLIPSIS, max_lines=1)
+        self.btn_confirm = ft.FilledButton(
+            content=ft.Row([ft.Text(tr("btn_confirm"), size=15, weight=ft.FontWeight.BOLD),
+                            self._keycap("→")], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+            on_click=lambda e: self._run_hotkey(self.hk_confirm_and_next),
+            bgcolor=ft.Colors.GREEN_700, color=ft.Colors.WHITE, height=48, expand=True,
         )
-        self.tf_take = ft.TextField(
-            label=self.tr("lbl_take"), 
-            value=self.take, 
-            width=100, 
-            text_align=ft.TextAlign.CENTER, 
-            text_size=20, 
-            on_change=self._update_log_state,
-            on_focus=self._on_tf_focus,
-            on_blur=self._on_tf_blur
-        )
-        self.tf_cam_id = ft.TextField(
-            label=self.tr("lbl_cam_id"), 
-            value=self.cam_id, 
-            width=80, 
-            text_align=ft.TextAlign.CENTER, 
-            text_size=20, 
-            on_change=self._update_log_state,
-            on_focus=self._on_tf_focus,
-            on_blur=self._on_tf_blur
-        )
-
-        log_controls = [self.tf_scene, self.tf_setting, self.tf_take]
-        if self.defaults["use_cam_id"]: log_controls.append(self.tf_cam_id)
-
-        log_card = ft.Card(
-            content=ft.Container(
-                padding=20,
-                content=ft.Column([
-                    ft.Text(self.tr("grp_log"), weight=ft.FontWeight.BOLD),
-                    ft.Row(log_controls, alignment=ft.MainAxisAlignment.SPACE_EVENLY)
-                ])
-            )
-        )
-
-        hk_card = ft.Card(
-            content=ft.Container(
-                padding=20,
-                content=ft.Column([
-                    ft.Text(self.tr("grp_hotkeys"), weight=ft.FontWeight.BOLD),
-                    ft.Row([
-                        ft.ElevatedButton(self.tr("hk_scene"), on_click=lambda _: self.hk_new_scene(), bgcolor=ft.Colors.BLUE_800, color=ft.Colors.WHITE, expand=True),
-                        ft.ElevatedButton(self.tr("hk_setting"), on_click=lambda _: self.hk_new_setting(), bgcolor=ft.Colors.ORANGE_800, color=ft.Colors.WHITE, expand=True),
-                    ]),
-                    ft.Row([
-                        ft.ElevatedButton(self.tr("hk_remove"), on_click=lambda _: self.hk_toggle_transfer(), bgcolor=ft.Colors.RED_800, color=ft.Colors.WHITE, expand=True),
-                        ft.ElevatedButton(self.tr("hk_take_plus"), on_click=lambda _: self.hk_plus_take(), bgcolor=ft.Colors.GREY_800, color=ft.Colors.WHITE, expand=True),
-                        ft.ElevatedButton(self.tr("hk_next"), on_click=lambda _: self.hk_confirm_and_next(), bgcolor=ft.Colors.GREEN_800, color=ft.Colors.WHITE, expand=True),
-                    ])
-                ])
-            )
-        )
-
-        # Bottom Ingest Controls
-        self.lbl_target = ft.Text(self.defaults["stammordner"] or self.tr("err_no_root"), size=12, italic=True)
-        self.lbl_total_size = ft.Text("0.00 GB", weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE_400)
-        
-        self.pb_ingest = ft.ProgressBar(value=0, visible=False)
-        self.lbl_mbps = ft.Text("", size=12, color=ft.Colors.GREY_400)
-        
-        self.btn_root = ft.ElevatedButton(self.tr("btn_choose_root"), icon=ft.Icons.FOLDER, on_click=self.pick_root)
-        self.btn_start = ft.ElevatedButton(self.tr("btn_start"), icon=ft.Icons.PLAY_ARROW, bgcolor=ft.Colors.GREEN_700, color=ft.Colors.WHITE, on_click=self.start_ingest, expand=True)
-        self.btn_cancel = ft.ElevatedButton("ABBRECHEN", icon=ft.Icons.STOP, bgcolor=ft.Colors.RED_700, color=ft.Colors.WHITE, on_click=self.cancel_ingest, disabled=True)
-
-        ingest_card = ft.Card(
-            content=ft.Container(
-                padding=15,
-                content=ft.Column([
-                    ft.Row([self.lbl_target, ft.Container(expand=True), self.lbl_total_size]),
-                    self.pb_ingest,
-                    ft.Row([self.btn_root, ft.Container(expand=True), self.lbl_mbps]),
-                    ft.Row([self.btn_start, self.btn_cancel])
-                ])
-            )
-        )
-
-        right_col = ft.Column([
-            self.preview_container,
-            log_card,
-            hk_card,
-            ft.Container(expand=True),
-            ingest_card
-        ], width=640)
-
-        main_row = ft.Row([
-            ft.Container(content=self.clip_list_view, expand=True, border=ft.Border.all(1, ft.Colors.OUTLINE), border_radius=8),
-            right_col
-        ], expand=True)
-
-        self.status_bar = ft.Text(self.status_msg, size=12)
-        self.lbl_version = ft.Text(f"v{APP_VERSION}", size=11, color=ft.Colors.GREY_500, weight=ft.FontWeight.W_500)
-
-        self.page.add(
-            header,
-            main_row,
+        log_card = self._card(ft.Column([
+            ft.Text(tr("grp_log"), weight=ft.FontWeight.BOLD),
+            ft.Row(log_fields, spacing=12),
+            ft.Column([
+                ft.Text(tr("next_name"), size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                self.lbl_next_name, self.lbl_clip_name,
+            ], spacing=2),
+            ft.Row([self.btn_confirm]),
             ft.Row([
-                self.status_bar,
-                ft.Container(expand=True),
-                self.lbl_version
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                self._hk_button("S", tr("hk_scene"), self.hk_new_scene),
+                self._hk_button("E", tr("hk_setting"), self.hk_new_setting),
+                self._hk_button("T", tr("hk_take_plus"), self.hk_plus_take),
+            ], spacing=8),
+            ft.Row([self._hk_button("Entf" if self.settings["language"] == "de" else "Del",
+                                    tr("hk_remove"), self.hk_toggle_transfer)], spacing=8),
+            ft.Text(tr("hk_hint"), size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+        ], spacing=12))
+
+        # ---------- ingest
+        self.lbl_free = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.lbl_summary = ft.Text("", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.LIGHT_BLUE_300)
+        self.lbl_ingest_warn = ft.Text("", size=12, color=ft.Colors.AMBER_400, visible=False)
+        self.pb_ingest = ft.ProgressBar(value=0, visible=False, height=8, border_radius=4)
+        self.lbl_current = ft.Text("", size=11, color=ft.Colors.ON_SURFACE_VARIANT, font_family=MONO,
+                                   overflow=ft.TextOverflow.ELLIPSIS, max_lines=1, expand=True)
+        self.lbl_mbps = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.btn_start = ft.FilledButton(tr("btn_start"), icon=ft.Icons.PLAY_ARROW, on_click=self.start_ingest,
+                                         bgcolor=ft.Colors.BLUE_700, color=ft.Colors.WHITE, height=46, expand=True)
+        self.btn_cancel = ft.OutlinedButton(tr("btn_cancel"), icon=ft.Icons.STOP, on_click=self.cancel_ingest,
+                                            disabled=True, height=46)
+        ingest_card = self._card(ft.Column([
+            ft.Row([ft.Text(tr("grp_ingest"), weight=ft.FontWeight.BOLD), ft.Container(expand=True), self.lbl_free]),
+            self.lbl_summary, self.lbl_ingest_warn, self.pb_ingest,
+            ft.Row([self.lbl_current, self.lbl_mbps]),
+            ft.Row([self.btn_start, self.btn_cancel]),
+        ], spacing=8))
+
+        right = ft.Column([preview_card, log_card, ft.Container(expand=True), ingest_card],
+                          width=RIGHT_W, spacing=12)
+
+        # ---------- status bar
+        self.status_text = ft.Text(self.tr("status_ready"), size=12, overflow=ft.TextOverflow.ELLIPSIS,
+                                   max_lines=1, expand=True)
+        self.mode_icon = ft.Icon(ft.Icons.KEYBOARD, size=16)
+        self.mode_text = ft.Text("", size=12)
+        status_bar = ft.Row([
+            self.status_text,
+            ft.Row([self.mode_icon, self.mode_text], spacing=6, tight=True),
+            ft.Container(width=16),
+            ft.Text(f"v{APP_VERSION}", size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+        ])
+
+        layout = ft.Column([
+            header,
+            ft.Row([left, right], expand=True, spacing=16, vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+            status_bar,
+        ], expand=True, spacing=12)
+
+        # Focus sink: focusing it takes the focus away from text fields so hotkeys work again
+        self.kb = ft.KeyboardListener(content=layout, autofocus=True)
+        self.page.controls.clear()
+        self.page.add(ft.Container(self.kb, expand=True))
+        self._set_text_focus(False)
+        self.update_target_label()
+
+    # ================================================================ refresh
+    def build_row(self, i, c):
+        selected = i == self.current
+        name = self.clip_name(c)
+        stat, stat_color, stat_tip = self.clip_status(c)
+
+        def badge(eye):
+            present, done = bool(c[f'path_{eye}']), c[f'done_{eye}']
+            if done:
+                bg, fg, border = ft.Colors.GREEN_700, ft.Colors.WHITE, None
+            elif present:
+                bg, fg, border = (ft.Colors.BLUE_700 if eye == "L" else ft.Colors.RED_700), ft.Colors.WHITE, None
+            else:
+                bg, fg, border = None, ft.Colors.OUTLINE, ft.Border.all(1, ft.Colors.OUTLINE_VARIANT)
+            return ft.Container(ft.Text(eye, size=11, weight=ft.FontWeight.BOLD, color=fg),
+                                bgcolor=bg, border=border, width=24, height=20, border_radius=4,
+                                alignment=ft.Alignment.CENTER)
+
+        size = c['size_L'] + c['size_R']
+        return ft.Container(
+            content=ft.Row([
+                ft.Container(ft.Checkbox(value=c['transfer'], data=i, on_change=self.on_row_check), width=40),
+                ft.Text(c['key'], width=120, weight=ft.FontWeight.BOLD, font_family=MONO, size=13),
+                ft.Text(c['cam'], width=56, size=12, color=ft.Colors.ON_SURFACE_VARIANT),
+                ft.Row([badge("L"), badge("R")], width=64, spacing=4),
+                ft.Text(name or "–", expand=True, font_family=MONO, size=13,
+                        color=ft.Colors.ON_SURFACE if name else ft.Colors.ON_SURFACE_VARIANT,
+                        overflow=ft.TextOverflow.ELLIPSIS, max_lines=1),
+                ft.Text(fmt_size(size), width=76, size=12, text_align=ft.TextAlign.RIGHT),
+                ft.Text(stat, width=150, size=12, weight=ft.FontWeight.BOLD, color=stat_color,
+                        tooltip=stat_tip, overflow=ft.TextOverflow.ELLIPSIS, max_lines=1),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            height=ROW_H, data=i, on_click=self.on_row_click,
+            padding=ft.Padding.symmetric(horizontal=8),
+            bgcolor=ft.Colors.PRIMARY_CONTAINER if selected else None,
+            border=ft.Border.only(
+                left=ft.BorderSide(3, ft.Colors.PRIMARY if selected else ft.Colors.TRANSPARENT),
+                bottom=ft.BorderSide(1, ft.Colors.OUTLINE_VARIANT)),
         )
 
-    # --- STATE HANDLERS ---
-    def on_project_change(self, e): 
-        self.project_name = e.control.value
-        self.load_manifest()
-        self.refresh_ui()
+    def refresh(self):
+        """Rebuild the whole list and all summaries (call after structural changes)."""
+        self.list_view.controls = [self.build_row(i, c) for i, c in enumerate(self.clips)]
+        self.refresh_summary()
 
-    def on_day_change(self, e): 
-        self.day = e.control.value
+    def refresh_row(self, i):
+        if 0 <= i < len(self.clips) and i < len(self.list_view.controls):
+            self.list_view.controls[i] = self.build_row(i, self.clips[i])
+
+    def refresh_summary(self):
+        has = bool(self.clips)
+        self.list_view.visible = has
+        self.empty_state.visible = not has
+
+        logged = sum(1 for c in self.clips if c['logged'])
+        done = sum(1 for c in self.clips if c['state'] == 'complete')
+        self.lbl_counts.value = self.tr("counts", n=len(self.clips), logged=logged, done=done) if has else ""
+
+        pending = [c for c in self.clips if c['transfer'] and c['logged']]
+        unlogged = sum(1 for c in self.clips if c['transfer'] and not c['logged'])
+        self.lbl_summary.value = self.tr("ingest_summary", n=len(pending),
+                                         size=fmt_size(sum(self.copy_size(c) for c in pending)))
+        self.lbl_ingest_warn.value = self.tr("warn_unlogged", n=unlogged) if unlogged else ""
+        self.lbl_ingest_warn.visible = bool(unlogged)
+        self.update_free_space()
+        self.update_name_preview()
+
+    def update_free_space(self):
+        root = self.settings.get("stammordner")
+        try:
+            self.lbl_free.value = self.tr("free_space", size=fmt_size(shutil.disk_usage(root).free)) if root else ""
+        except OSError:
+            self.lbl_free.value = ""
+
+    def update_target_label(self):
+        d = self.project_dir()
+        if not d:
+            self.lbl_target.value = ""
+            return
+        sub = f"Tag_{self.day.strip().zfill(2)}" if self.settings["sort_mode"] == "Drehtage" else "Szene_XX"
+        self.lbl_target.value = self.tr("target_prefix") + str(d / sub)
+
+    def update_name_preview(self):
+        self.lbl_next_name.value = build_name(self.settings, self.project_name.strip(),
+                                              self.scene, self.setting, self.take, self.cam_id)
+        c = self.clips[self.current] if 0 <= self.current < len(self.clips) else None
+        name = self.clip_name(c) if c else None
+        self.lbl_clip_name.value = f"{self.tr('clip_name')}: {name}" if name else ""
+
+    def set_status(self, msg, warn=False, error=False):
+        self.status_text.value = msg
+        self.status_text.color = ft.Colors.RED_400 if error else (ft.Colors.AMBER_400 if warn else None)
+
+    def _set_text_focus(self, focused):
+        self._text_focused = focused
+        self.mode_icon.name = ft.Icons.EDIT if focused else ft.Icons.KEYBOARD
+        self.mode_icon.color = ft.Colors.AMBER_400 if focused else ft.Colors.GREEN_400
+        self.mode_text.value = self.tr("mode_text" if focused else "mode_hotkeys")
+        self.mode_text.color = self.mode_icon.color
+
+    async def _leave_text(self, e=None):
+        if self._text_focused:
+            self._set_text_focus(False)
+            await self.kb.focus()
+        self.page.update()
+
+    def set_busy(self, busy):
+        self.busy = busy
+        for ctrl in (self.btn_add, self.btn_clear, self.btn_settings, self.root_box, self.tf_project, self.tf_day):
+            ctrl.disabled = busy
+        self.btn_start.disabled = busy
+        self.btn_cancel.disabled = not busy
+        self.pb_ingest.visible = busy
+        if busy:
+            self.pb_ingest.value = 0
+        else:
+            self.lbl_current.value = ""
+            self.lbl_mbps.value = ""
+
+    # ================================================================ list scrolling
+    def _on_list_scroll(self, e):
+        self._list_px = e.pixels
+        self._list_h = e.viewport_dimension or self._list_h
+
+    def _on_list_size(self, e):
+        self._list_h = e.height or self._list_h
+
+    async def _ensure_visible(self, idx):
+        top, bottom = idx * ROW_H, (idx + 1) * ROW_H
+        if top < self._list_px:
+            target = top
+        elif bottom > self._list_px + self._list_h:
+            target = bottom - self._list_h
+        else:
+            return
+        self._list_px = max(0.0, target)
+        await self.list_view.scroll_to(offset=self._list_px, duration=80)
+
+    # ================================================================ header handlers
+    def on_project_change(self, e):
+        self.project_name = INVALID_CHARS.sub("_", e.control.value)
+        self.update_target_label()
+        self.update_name_preview()
+
+    def on_project_commit(self, e=None):
+        if self.tf_project.value != self.project_name:
+            self.tf_project.value = self.project_name
+        self.settings["last_project"] = self.project_name
+        self.save_config()
+        self.load_manifest()
+        self.refresh()
+        self.page.update()
+
+    def on_day_change(self, e):
+        self.day = INVALID_CHARS.sub("_", e.control.value).strip() or "1"
+        self.update_target_label()
+
+    def on_day_commit(self, e=None):
+        self.settings["last_day"] = self.day
+        self.save_config()
+        self.page.update()
 
     def _update_log_state(self, e=None):
-        self.scene = self.tf_scene.value
-        self.setting = self.tf_setting.value
-        self.take = self.tf_take.value
-        self.cam_id = self.tf_cam_id.value
+        self.scene = self.tf_scene.value.strip()
+        self.setting = self.tf_setting.value.strip()
+        self.take = self.tf_take.value.strip()
+        self.cam_id = INVALID_CHARS.sub("_", self.tf_cam_id.value.strip())
+        self.update_name_preview()
 
     def update_log_fields(self):
-        self.tf_scene.value = self.scene
-        self.tf_setting.value = self.setting
-        self.tf_take.value = self.take
-        self.tf_cam_id.value = self.cam_id
-        self.page.update()
-
-    def set_status(self, msg):
-        self.status_bar.value = msg
-        self.page.update()
-
-    def open_settings(self, e):
-        dlg = SettingsDialog(self.page, self.defaults, HAS_XXHASH, self.tr, self.on_settings_saved, self.open_manual, APP_VERSION)
-        dlg.open()
-
-    def on_settings_saved(self, new_defaults):
-        self.defaults = new_defaults
-        self.save_config()
-        self.page.controls.clear()
-        self.status_msg = self.tr("status_ready")
-        self.build_ui()
-        self.refresh_ui()
-
-    def open_manual(self):
-        lang = self.defaults.get("language", "de")
-        filename = "3DC2P Manual DE.pdf" if lang == "de" else "3DC2P Manual ENG.pdf"
-        p = Path(resource_path(filename))
-        if p.exists():
-            try:
-                if self.is_windows: os.startfile(p)
-                elif self.os_type == "Darwin": subprocess.run(["open", str(p)])
-                else: subprocess.run(["xdg-open", str(p)])
-            except Exception as e:
-                self.set_status(f"Error opening manual: {e}")
-        else:
-            self.set_status(self.tr("err_manual"))
-
-    # --- LIST / CARDS ---
-    def refresh_ui(self):
-        self.clip_list_view.controls.clear()
-        total_transfer_size = 0
-
-        for i, c in enumerate(self.all_clips):
-            is_selected = (i == self.current_index)
-            
-            eyes_str = "/".join([e for e in ["L","R"] if c[f'path_{e}']])
-            tgt = self.format_name(c, i+1) if c['logged'] else "-"
-            
-            if c.get('tag') == 'complete':
-                stat_text = self.tr("status_complete")
-                stat_color = ft.Colors.GREEN_400
-            elif c['done'] and c.get('tag') != 'complete':
-                stat_text = self.tr("status_done")
-                stat_color = ft.Colors.BLUE_400
-            else:
-                stat_text = c.get('status_text', self.tr("status_ready"))
-                stat_color = ft.Colors.ORANGE_400 if 'tag' in c and c['tag'] == 'match' else ft.Colors.GREY_400
-
-            if c['transfer'] and not c['done']:
-                total_transfer_size += c['size_bytes']
-
-            bg_color = ft.Colors.BLUE_900 if is_selected else ft.Colors.SURFACE_VARIANT
-
-            card = ft.Container(
-                bgcolor=bg_color,
-                border_radius=8,
-                padding=10,
-                on_click=lambda e, idx=i: self.select_clip(idx),
-                content=ft.Row([
-                    ft.Checkbox(value=c['transfer'], on_change=lambda e, idx=i: self.toggle_transfer_from_cb(idx, e.control.value)),
-                    ft.Column([
-                        ft.Text(f"ID: {c['id']} | {c['cam']} | Eye: {eyes_str}", weight=ft.FontWeight.BOLD),
-                        ft.Text(tgt, color=ft.Colors.GREY_300, italic=True),
-                    ], expand=True),
-                    ft.Column([
-                        ft.Text(f"{c['size_bytes']/1024**3:.2f} GB", text_align=ft.TextAlign.RIGHT),
-                        ft.Text(stat_text, color=stat_color, text_align=ft.TextAlign.RIGHT, weight=ft.FontWeight.BOLD)
-                    ], alignment=ft.MainAxisAlignment.CENTER)
-                ])
-            )
-            self.clip_list_view.controls.append(card)
-
-        self.lbl_total_size.value = f"{total_transfer_size / (1024**3):.2f} GB"
-        self.page.update()
-
-    def select_clip(self, idx):
-        self.current_index = idx
-        self.refresh_ui()
-        c = self.all_clips[idx]
-        with self.thumb_queue.mutex: self.thumb_queue.queue.clear()
-        self.thumb_queue.put(c)
-
-    def toggle_transfer_from_cb(self, idx, val):
-        self.all_clips[idx]['transfer'] = val
-        self.refresh_ui()
-
-    def format_name(self, clip, idx=1):
-        name = f"{self.project_name}_S{str(clip['scene']).zfill(self.defaults['padding_s'])}_E{str(clip['setting']).zfill(self.defaults['padding_e'])}_T{str(clip['take']).zfill(self.defaults['padding_t'])}"
-        if self.defaults["use_cam_id"]: name += f"_{self.cam_id}"
-        return name
-
-    def clear_list(self, e):
-        self.all_clips = []
-        self.current_index = -1
-        self.refresh_ui()
-        self.set_status(self.tr("status_ready"))
-
-    # --- SCANNING / PICKERS ---
-    async def pick_source(self, e):
-        path = await self.src_picker.get_directory_path()
-        if path:
-            threading.Thread(target=self._scan_folder, args=(path,), daemon=True).start()
+        self.tf_scene.value, self.tf_setting.value = self.scene, self.setting
+        self.tf_take.value, self.tf_cam_id.value = self.take, self.cam_id
+        self.update_name_preview()
 
     async def pick_root(self, e):
-        path = await self.root_picker.get_directory_path()
+        if self.busy:
+            return
+        path = await self.root_picker.get_directory_path(dialog_title=self.tr("lbl_root"))
         if path:
-            self.defaults["stammordner"] = path
+            self.settings["stammordner"] = path
             self.save_config()
-            self.lbl_target.value = path
+            self.lbl_root.value = path
+            self.root_box.tooltip = path
+            self.update_target_label()
             self.load_manifest()
+            self.refresh()
             self.page.update()
 
-    def _scan_folder(self, path):
-        self.set_status(f"Scanning {path}...")
-        manager = IngestManager(self.defaults, self.temp_thumb_dir, self.ffmpeg_path, self.is_windows, {})
-        found = manager.scan_folder(path)
-        
-        current_map = {c['id']: c for c in self.all_clips}
-        for item in found:
-            cid = item['id']
-            if cid not in current_map:
-                current_map[cid] = {
-                    'id': cid, 'path_L': None, 'path_R': None, 'cam': item['cam'], 
-                    'scene': "", 'setting': "", 'take': "", 
-                    'logged': False, 'transfer': False, 'done': False, 'size_bytes': 0,
-                    'tag': 'normal', 'status_text': self.tr("status_ready")
-                }
-            if not current_map[cid][f'path_{item["e"]}']:
-                current_map[cid][f'path_{item["e"]}'] = item['p']
-                current_map[cid]['size_bytes'] += item['s']
-        
-        self.all_clips = [current_map[cid] for cid in sorted(current_map.keys())]
-        self.sync_clips_with_manifest()
-        
-        if not found:
-            self.set_status(f"Keine 3D-Clips in {path} gefunden." if self.defaults.get("language", "de") == "de" else f"No 3D clips found in {path}.")
-        else:
-            self.set_status(self.tr("status_ready"))
-        self.refresh_ui()
-
-    def sync_clips_with_manifest(self):
-        matched = 0
-        for clip in self.all_clips:
-            cid = clip['id']
-            if cid in self.manifest_data:
-                m = self.manifest_data[cid]
-                clip['scene'] = m.get('scene', "")
-                clip['setting'] = m.get('setting', "")
-                clip['take'] = m.get('take', "")
-                clip['logged'] = True
-                
-                l_done = m.get("status_L") == "done"
-                r_done = m.get("status_R") == "done"
-                
-                if l_done and r_done:
-                    clip['status_text'] = self.tr("status_complete")
-                    clip['tag'] = 'complete'
-                    clip['done'] = True
-                    clip['transfer'] = False
-                elif (l_done or r_done):
-                    missing = "R" if l_done else "L"
-                    clip['status_text'] = f"{self.tr('status_match')}{missing}"
-                    clip['tag'] = 'match'
-                    clip['transfer'] = True
-                    matched += 1
-                else:
-                    clip['status_text'] = self.tr("status_ready")
-                    clip['tag'] = 'normal'
-                    clip['transfer'] = True
-
-    # --- PREVIEW WORKER ---
-    def preview_worker(self):
-        while True:
-            try:
-                data = self.thumb_queue.get()
-                vid = data['path_L'] or data['path_R']
-                if vid and os.path.exists(self.ffmpeg_path):
-                    t_path = self.temp_thumb_dir / f"t_{data['id']}.jpg"
-                    if not t_path.exists():
-                        c_flags = 0x08000000 if self.is_windows else 0
-                        subprocess.run([self.ffmpeg_path, '-y', '-ss', '1.0', '-i', vid, '-frames:v', '1', '-s', '640x360', str(t_path)], stderr=subprocess.DEVNULL, creationflags=c_flags)
-                    if t_path.exists():
-                        with open(t_path, "rb") as img_file:
-                            self.img_preview.src = img_file.read()
-                        self.page.update()
-                self.thumb_queue.task_done()
-            except Exception: pass
-
-    # --- HOTKEYS ---
-    def on_keyboard(self, e: ft.KeyboardEvent):
-        if self._text_field_focused:
+    def open_settings(self, e):
+        if self.busy:
             return
-        key = e.key
-        key_upper = key.upper() if key else ""
-        if key == "Arrow Down": self.select_rel(1)
-        elif key == "Arrow Up": self.select_rel(-1)
-        elif key == "Arrow Right": self.hk_confirm_and_next()
-        elif key == "Delete" or key == "Backspace": self.hk_toggle_transfer()
-        elif key_upper == "S": self.hk_new_scene()
-        elif key_upper == "E": self.hk_new_setting()
-        elif key_upper == "T": self.hk_plus_take()
+        self._dialog_open = True
+        dlg = SettingsDialog(self.page, dict(self.settings), HAS_XXHASH, self.tr,
+                             self.on_settings_saved, self.open_manual, APP_VERSION,
+                             on_close=self._on_dialog_closed)
+        dlg.open()
+
+    def _on_dialog_closed(self):
+        self._dialog_open = False
+        self.page.run_task(self._refocus)
+
+    def on_settings_saved(self, new_settings):
+        self._dialog_open = False
+        self.settings.update(new_settings)
+        self.save_config()
+        self.build_ui()
+        self.refresh()
+        self.page.update()
+
+    def open_manual(self):
+        lang = self.settings.get("language", "de")
+        p = resource_path("3DC2P Manual DE.pdf" if lang == "de" else "3DC2P Manual ENG.pdf")
+        if p.exists():
+            open_path(p)
+        else:
+            self.set_status(self.tr("err_manual"), warn=True)
+            self.page.update()
+
+    # ================================================================ list handlers
+    async def on_row_click(self, e):
+        await self._leave_text()
+        self.select(e.control.data, scroll=False)
+        self.page.update()
+
+    def on_row_check(self, e):
+        idx = e.control.data
+        if 0 <= idx < len(self.clips):
+            self.clips[idx]['transfer'] = e.control.value
+            self.refresh_row(idx)
+            self.refresh_summary()
+            self.page.update()
+
+    def select(self, idx, scroll=True):
+        if not (0 <= idx < len(self.clips)):
+            return
+        old, self.current = self.current, idx
+        self.refresh_row(old)
+        self.refresh_row(idx)
+        self.update_name_preview()
+        c = self.clips[idx]
+        self.lbl_preview.value = "  ·  ".join(
+            f"{e}: {Path(c[f'path_{e}']).name}" for e in "LR" if c[f'path_{e}']) or c['key']
+        self.request_preview(c)
+        if scroll:
+            self.page.run_task(self._ensure_visible, idx)
 
     def select_rel(self, d):
-        if not self.all_clips: return
-        ni = self.current_index + d
-        if 0 <= ni < len(self.all_clips):
-            self.select_clip(ni)
+        if not self.clips:
+            return
+        if self.current < 0:
+            self.select(0)
+        else:
+            self.select(max(0, min(len(self.clips) - 1, self.current + d)))
+
+    async def clear_list(self, e):
+        if self.busy or not self.clips:
+            return
+        ok = await self.dialog(self.tr("dlg_clear_title"), self.tr("dlg_clear_body"),
+                               actions=[(self.tr("btn_abort"), False, None),
+                                        (self.tr("btn_clear"), True, ft.Colors.RED_700)])
+        if not ok:
+            return
+        self.clips, self.current = [], -1
+        self.img_L.src = self.img_R.src = BLANK_PNG
+        self.lbl_preview.value = self.tr("preview_none")
+        self.refresh()
+        self.set_status(self.tr("status_ready"))
+        self.page.update()
+
+    # ================================================================ scanning
+    async def pick_source(self, e):
+        if self.busy:
+            return
+        path = await self.src_picker.get_directory_path(dialog_title=self.tr("btn_add_source"))
+        if not path:
+            return
+        self.set_status(self.tr("scanning", path=path))
+        self.page.update()
+        threading.Thread(target=self._scan_worker, args=(path,), daemon=True).start()
+
+    def _scan_worker(self, path):
+        try:
+            found = IngestManager(self.settings, self.thumb_dir, self.ffmpeg_path, self.is_windows).scan_folder(path)
+            self._ui(self._merge_scan, path, found)
+        except Exception as ex:
+            logging.error(f"Scan error {path}: {ex}", exc_info=True)
+            self._ui(self.set_status, f"Scan: {ex}", False, True)
+
+    def _merge_scan(self, path, found):
+        by_key = {c['key']: c for c in self.clips}
+        selected_key = self.clips[self.current]['key'] if 0 <= self.current < len(self.clips) else None
+        touched, added, dupes = set(), 0, 0
+
+        for it in sorted(found, key=lambda x: x['p']):
+            eye, n, key = it['e'], 1, it['id']
+            while True:
+                c = by_key.get(key)
+                if c is None:
+                    c = by_key[key] = self.new_clip(key, it)
+                    if n > 1:
+                        dupes += 1
+                    break
+                if c['cam'] == it['cam'] and c[f'path_{eye}'] in (None, it['p']):
+                    break
+                n += 1
+                key = f"{it['id']}~{n}"
+            if c[f'path_{eye}'] == it['p']:
+                continue
+            c[f'path_{eye}'], c[f'size_{eye}'] = it['p'], it['s']
+            touched.add(key)
+            added += 1
+
+        self.clips = sorted(by_key.values(), key=lambda c: c['key'])
+        for c in self.clips:
+            if c['key'] in touched:
+                self.apply_manifest(c)
+
+        keys = [c['key'] for c in self.clips]
+        self.current = keys.index(selected_key) if selected_key in keys else -1
+        self.refresh()
+        if not found:
+            self.set_status(self.tr("scan_none", path=path), warn=True)
+        elif dupes:
+            self.set_status(self.tr("scan_dupes", n=dupes), warn=True)
+        else:
+            self.set_status(self.tr("scan_done", n=added, path=path))
+        if self.current < 0 and self.clips:
+            self.select(0)
+        elif selected_key in touched:
+            self.select(self.current, scroll=False)
+
+    # ================================================================ preview
+    def request_preview(self, c):
+        with self.preview_queue.mutex:
+            self.preview_queue.queue.clear()
+        self.preview_queue.put((c['key'], c['path_L'], c['path_R']))
+
+    def _make_thumb(self, video):
+        if not video or not self.ffmpeg_path:
+            return None
+        out = self.thumb_dir / f"prev_{file_key(video)}.jpg"
+        if not out.exists():
+            subprocess.run([self.ffmpeg_path, '-y', '-ss', '1.0', '-i', video, '-frames:v', '1',
+                            '-vf', 'scale=480:-2', str(out)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           creationflags=0x08000000 if self.is_windows else 0)
+        if out.exists():
+            return out.read_bytes()
+        return None
+
+    def _preview_worker(self):
+        while True:
+            key, path_l, path_r = self.preview_queue.get()
+            try:
+                imgs = (self._make_thumb(path_l), self._make_thumb(path_r))
+                self._ui(self._show_preview, key, *imgs)
+            except Exception as e:
+                logging.error(f"Preview error: {e}")
+
+    def _show_preview(self, key, img_l, img_r):
+        if not (0 <= self.current < len(self.clips)) or self.clips[self.current]['key'] != key:
+            return
+        self.img_L.src = img_l or BLANK_PNG
+        self.img_R.src = img_r or BLANK_PNG
+
+    # ================================================================ hotkeys
+    async def on_keyboard(self, e: ft.KeyboardEvent):
+        if self._dialog_open:
+            return
+        key = e.key or ""
+        if self._text_focused:
+            if key == "Escape":
+                await self._leave_text()
+            return
+        if e.ctrl or e.alt or e.meta:
+            return
+        if key == "Arrow Down":
+            self.select_rel(1)
+        elif key == "Arrow Up":
+            self.select_rel(-1)
+        elif self.busy:
+            return
+        elif key == "Arrow Right":
+            self.hk_confirm_and_next()
+        elif key in ("Delete", "Backspace"):
+            self.hk_toggle_transfer()
+        elif key.upper() == "S":
+            self.hk_new_scene()
+        elif key.upper() == "E":
+            self.hk_new_setting()
+        elif key.upper() == "T":
+            self.hk_plus_take()
+        else:
+            return
+        self.page.update()
+
+    def _run_hotkey(self, fn):
+        if not self.busy:
+            fn()
+            self.page.update()
 
     def hk_new_scene(self):
-        try: self.scene = str(int(self.scene)+1); self.setting = "1"; self.take = "1"
-        except: self.scene = "1"; self.setting = "1"; self.take = "1"
+        self.scene, self.setting, self.take = inc(self.scene), "1", "1"
         self.update_log_fields()
-    
+
     def hk_new_setting(self):
-        try: self.setting = str(int(self.setting)+1); self.take = "1"
-        except: self.setting = "1"; self.take = "1"
+        self.setting, self.take = inc(self.setting), "1"
         self.update_log_fields()
 
     def hk_plus_take(self):
-        try: self.take = str(int(self.take)+1)
-        except: self.take = "1"
+        self.take = inc(self.take)
         self.update_log_fields()
 
     def hk_toggle_transfer(self):
-        if self.current_index >= 0 and self.current_index < len(self.all_clips):
-            c = self.all_clips[self.current_index]
+        if 0 <= self.current < len(self.clips):
+            c = self.clips[self.current]
             c['transfer'] = not c['transfer']
-            self.refresh_ui()
+            self.refresh_row(self.current)
+            self.refresh_summary()
 
     def hk_confirm_and_next(self):
-        if self.current_index >= 0 and self.current_index < len(self.all_clips):
-            c = self.all_clips[self.current_index]
-            c.update({'scene': self.scene, 'setting': self.setting, 'take': self.take, 'logged': True, 'transfer': True})
-            try: self.take = str(int(self.take) + 1)
-            except: self.take = "1"
+        if not (0 <= self.current < len(self.clips)):
+            return
+        c = self.clips[self.current]
+        if c.get('locked_name'):
+            # Other eye already copied under this name – keep it so L/R stay paired
+            c['transfer'] = True
+            self.set_status(self.tr("locked_name", name=c['locked_name']), warn=True)
+        else:
+            c.update(scene=self.scene, setting=self.setting, take=self.take, cam_id=self.cam_id,
+                     logged=True, transfer=True)
+            if c['state'] in ('conflict', 'failed'):
+                c['state'] = 'new'
+            self.take = inc(self.take)
             self.update_log_fields()
-            self.refresh_ui()
-            self.select_rel(1)
+        self.refresh_row(self.current)
+        self.refresh_summary()
+        self.select_rel(1)
 
-    # --- INGEST ---
-    def start_ingest(self, e):
-        if not self.defaults["stammordner"]:
-            self.set_status("ERROR: " + self.tr("err_no_root"))
-            return
-        
-        self.load_manifest()
-        base = Path(self.defaults["stammordner"]) / self.project_name
-        
-        to_copy = []
-        for i, c in enumerate(self.all_clips):
-            if c['transfer'] and not c['done'] and c['logged']:
-                to_copy.append((c, i))
+    # ================================================================ dialogs
+    async def dialog(self, title, body, items=None, actions=None, width=520):
+        """Shows a modal dialog and returns the value of the pressed action."""
+        fut = asyncio.get_running_loop().create_future()
 
-        if not to_copy:
-            self.set_status(self.tr("msg_no_copy"))
-            return
+        def finish(value):
+            if not fut.done():
+                fut.set_result(value)
+            self.page.pop_dialog()
 
-        total_copy_bytes = sum(c['size_bytes'] for c, _ in to_copy)
+        content = [ft.Text(body)] if body else []
+        if items:
+            shown = items[:25]
+            lines = [ft.Text(i, size=12, font_family=MONO, selectable=True) for i in shown]
+            if len(items) > len(shown):
+                lines.append(ft.Text(self.tr("and_more", n=len(items) - len(shown)), size=12, italic=True))
+            content.append(ft.Container(ft.Column(lines, spacing=2, scroll=ft.ScrollMode.AUTO),
+                                        height=min(300, 20 * len(lines) + 10), padding=8,
+                                        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST, border_radius=6))
+        actions = actions or [(self.tr("btn_ok"), True, None)]
+        # Not modal: Esc / click outside dismisses, which always counts as "cancel" (None)
+        dlg = ft.AlertDialog(
+            modal=False, title=ft.Text(title),
+            content=ft.Container(ft.Column(content, tight=True, spacing=10), width=width),
+            actions=[ft.FilledButton(label, bgcolor=color, color=ft.Colors.WHITE if color else None,
+                                     on_click=lambda e, v=value: finish(v))
+                     if color else ft.TextButton(label, on_click=lambda e, v=value: finish(v))
+                     for label, value, color in actions],
+            on_dismiss=lambda e: fut.done() or fut.set_result(None),
+        )
+        self._dialog_open = True
+        self.page.show_dialog(dlg)
         try:
-            total_disk, used_disk, free_disk = shutil.disk_usage(self.defaults["stammordner"])
-            if free_disk < total_copy_bytes:
-                self.set_status(f"ERROR: {self.tr('err_space')} ({free_disk / (1024**3):.1f} GB frei < {total_copy_bytes / (1024**3):.1f} GB)")
-                return
-            if free_disk - total_copy_bytes < 100 * (1024**3):
-                self.set_status(f"WARNUNG: {self.tr('warn_space')}")
-        except Exception: pass
+            return await fut
+        finally:
+            self._dialog_open = False
+            await self._refocus()
 
-        self.btn_start.disabled = True
-        self.btn_cancel.disabled = False
-        self.pb_ingest.visible = True
-        self.pb_ingest.value = 0
+    async def _refocus(self):
+        """After a dialog closes nothing has focus and the first key press would get lost."""
+        try:
+            await self.kb.focus()
+        except Exception as e:
+            logging.error(f"Refocus failed: {e}")
+
+    # ================================================================ ingest
+    async def start_ingest(self, e):
+        if self.busy:
+            return
+        await self._leave_text()
+        tr = self.tr
+        if not self.settings.get("stammordner"):
+            await self.dialog(tr("grp_ingest"), tr("err_no_root"))
+            return
+        if not Path(self.settings["stammordner"]).is_dir():
+            await self.dialog(tr("grp_ingest"), tr("err_root_missing", path=self.settings["stammordner"]))
+            return
+        if not self.project_name.strip():
+            await self.dialog(tr("grp_ingest"), tr("err_no_project"))
+            return
+
+        selected = [c for c in self.clips if c['transfer'] and c['logged']]
+        if not selected:
+            self.set_status(tr("msg_no_copy"), warn=True)
+            self.page.update()
+            return
+
+        base = self.project_dir()
+        planner = IngestManager(self.settings, self.thumb_dir, self.ffmpeg_path, self.is_windows)
+        jobs, pre_errors = [], []
+        for c in selected:
+            bn = self.clip_name(c)
+            sub = dict(c)
+            wanted = self.eyes_to_copy(c)
+            for eye in "LR":
+                if eye not in wanted:
+                    sub[f'path_{eye}'] = None
+            plans = planner.plan_clip(sub, self.clip_root(base, c), bn)
+            if not plans:
+                pre_errors.append(tr("err_missing_src", name=c['key']))
+                continue
+            jobs.append({'key': c['key'], 'bn': bn, 'plans': plans,
+                         'clip': {k: c[k] for k in ('id', 'scene', 'setting', 'take', 'cam_id')}})
+        if not jobs:
+            await self.dialog(tr("grp_ingest"), tr("msg_no_copy"), items=pre_errors)
+            return
+
+        # Two clips must never write to the same file
+        owners, dupes = {}, []
+        for j in jobs:
+            for t in planner.plan_targets(j['plans']):
+                k = str(t).lower()
+                if k in owners and owners[k] != j['key']:
+                    dupes.append(f"{t.name}   ({owners[k]} / {j['key']})")
+                owners.setdefault(k, j['key'])
+        if dupes:
+            await self.dialog(tr("dlg_dupes_title"), tr("dlg_dupes_body"), items=dupes)
+            return
+
+        existing = [str(t.relative_to(base)) for j in jobs for t in planner.plan_targets(j['plans']) if t.exists()]
+        if existing:
+            ok = await self.dialog(tr("dlg_exist_title"), tr("dlg_exist_body", n=len(existing)), items=existing,
+                                   actions=[(tr("btn_abort"), False, None),
+                                            (tr("btn_overwrite"), True, ft.Colors.RED_700)])
+            if not ok:
+                return
+
+        need = sum(planner.plan_bytes(j['plans']) for j in jobs)
+        try:
+            free = shutil.disk_usage(self.settings["stammordner"]).free
+            if free < need:
+                await self.dialog(tr("grp_ingest"), tr("err_space", free=fmt_size(free), need=fmt_size(need)))
+                return
+            if free - need < LOW_SPACE:
+                self.set_status(tr("warn_space"), warn=True)
+        except OSError as ex:
+            await self.dialog(tr("grp_ingest"), str(ex))
+            return
+
+        self.set_busy(True)
         self.page.update()
 
-        def _on_status(msg):
-            self.status_bar.value = msg
-            self.page.update()
-
-        def _on_total(pct, mbps, eta):
-            self.pb_ingest.value = pct / 100
-            self.lbl_mbps.value = f"{mbps:.1f} MB/s | ETA: {eta:.0f}s"
-            self.page.update()
-
-        def _on_clip_start(idx):
-            self.all_clips[idx]['status_text'] = self.tr("status_work")
-            self.refresh_ui()
-
-        def _on_clip_done(idx, m_data):
-            self.manifest_data = m_data
-            self.all_clips[idx]['done'] = True
-            self.save_manifest()
-            self.refresh_ui()
-
         callbacks = {
-            'on_status': _on_status,
-            'on_total_progress': _on_total,
-            'on_clip_start': _on_clip_start,
-            'on_clip_done': _on_clip_done,
-            'on_error': _on_status
+            'on_status': lambda msg: self._ui(self._on_ingest_status, msg),
+            'on_total_progress': lambda pct, mbps, eta: self._ui(self._on_ingest_progress, pct, mbps, eta),
+            'on_clip_start': lambda key: self._ui(self._on_clip_start, key),
+            'on_clip_done': lambda key, entry, failed: self._ui(self._on_clip_done, key, entry, failed),
         }
-        
-        self.manager = IngestManager(self.defaults, self.temp_thumb_dir, self.ffmpeg_path, self.is_windows, callbacks)
+        self.manager = IngestManager(self.settings, self.thumb_dir, self.ffmpeg_path, self.is_windows, callbacks)
+        threading.Thread(target=self._ingest_worker,
+                         args=(self.manager, jobs, self.project_name.strip(), base, pre_errors),
+                         daemon=True).start()
 
-        def run():
-            m_data, log = self.manager.run_ingest(
-                to_copy, 
-                self.project_name, 
-                lambda c: base / (f"Tag_{str(self.day).zfill(2)}" if self.defaults["sort_mode"] == "Drehtage" else f"Szene_{str(c['scene']).zfill(self.defaults['padding_s'])}"),
-                lambda c: self.format_name(c, 1),
-                base, 
-                base, 
-                self.manifest_data
-            )
-            self.manifest_data = m_data
-            self.save_manifest()
-            self.post_ingest()
+    def _ingest_worker(self, manager, jobs, project, base, pre_errors):
+        try:
+            result = manager.run_ingest(jobs, project, base, self.manifest, base / MANIFEST_FILE)
+        except Exception as ex:
+            logging.error(f"Ingest crashed: {ex}", exc_info=True)
+            result = {'manifest': None, 'errors': [f"Ingest: {ex}"], 'warnings': [], 'clips_ok': 0,
+                      'clips_failed': len(jobs), 'cancelled': False, 'bytes': 0,
+                      'html_report': None, 'csv': None}
+        result['errors'] = pre_errors + result['errors']
+        self._ui(self._on_ingest_finished, result, base)
 
-        threading.Thread(target=run, daemon=True).start()
+    def _find(self, key):
+        for i, c in enumerate(self.clips):
+            if c['key'] == key:
+                return i, c
+        return -1, None
+
+    def _on_ingest_status(self, msg):
+        self.lbl_current.value = msg
+
+    def _on_ingest_progress(self, pct, mbps, eta):
+        self.pb_ingest.value = pct / 100
+        m, s = divmod(int(eta), 60)
+        self.lbl_mbps.value = f"{pct:.0f} %  ·  {mbps:.1f} MB/s  ·  ETA {m}:{s:02d}"
+
+    def _on_clip_start(self, key):
+        i, c = self._find(key)
+        if c:
+            c['state'] = 'working'
+            self.refresh_row(i)
+
+    def _on_clip_done(self, key, entry, failed_eyes):
+        self.manifest[key] = entry
+        i, c = self._find(key)
+        if c:
+            self.apply_manifest(c)
+            if failed_eyes:
+                c['state'] = 'failed'
+            self.refresh_row(i)
+
+    async def _on_ingest_finished_async(self, result, base):
+        tr = self.tr
+        errors, warnings = result.get('errors', []), result.get('warnings', [])
+        if result.get('cancelled'):
+            title = tr("dlg_done_cancel")
+        elif errors:
+            title = tr("dlg_done_err")
+        else:
+            title = tr("dlg_done_ok")
+        self.set_status(title, warn=result.get('cancelled'), error=bool(errors))
+        self.page.update()
+
+        lines = [f"✖ {e}" for e in errors] + [f"• {w}" for w in warnings]
+        body = tr("done_summary", ok=result.get('clips_ok', 0), failed=result.get('clips_failed', 0),
+                  size=fmt_size(result.get('bytes', 0)))
+        if result.get('csv'):
+            body += "\n" + tr("done_csv")
+        actions = [(tr("btn_open_folder"), "folder", None)]
+        if result.get('html_report'):
+            actions.append((tr("btn_open_report"), "report", None))
+        actions.append((tr("btn_ok"), "ok", ft.Colors.BLUE_700))
+
+        choice = await self.dialog(title, body, items=lines or None, actions=actions, width=640)
+        if choice == "folder":
+            open_path(base)
+        elif choice == "report":
+            open_path(result['html_report'])
+
+    def _on_ingest_finished(self, result, base):
+        if result.get('manifest') is not None:
+            self.manifest = result['manifest']
+        for c in self.clips:
+            was_failed = c['state'] == 'failed'
+            self.apply_manifest(c)
+            if was_failed and c['state'] != 'complete':
+                c['state'] = 'failed'
+        self.set_busy(False)
+        self.manager = None
+        self.refresh()
+        self.page.run_task(self._on_ingest_finished_async, result, base)
 
     def cancel_ingest(self, e):
         if self.manager:
             self.manager.cancel_event.set()
-            self.set_status("ABBRUCH WIRD AUSGEFÜHRT...")
             self.btn_cancel.disabled = True
+            self.set_status(self.tr("cancelling"), warn=True)
             self.page.update()
-
-    def post_ingest(self):
-        self.sync_clips_with_manifest()
-        if self.manager and self.manager.cancel_event.is_set():
-            self.set_status(self.tr("status_cancelled"))
-        else:
-            self.set_status(self.tr("msg_complete"))
-        
-        self.btn_start.disabled = False
-        self.btn_cancel.disabled = True
-        self.pb_ingest.visible = False
-        self.lbl_mbps.value = ""
-        self.refresh_ui()
